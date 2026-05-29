@@ -1,0 +1,3 @@
+ai.knowhub.config.RedissonCommonAutoConfiguration
+ai.knowhub.config.ServiceLeaseAutoConfiguration
+ai.knowhub.infra.uid.BaiduUidAutoConfiguration

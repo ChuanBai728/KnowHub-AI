@@ -1,0 +1,4 @@
+org.springframework.boot.env.EnvironmentPostProcessor=\
+  ai.knowhub.environment.SpringEnvironment
+org.springframework.context.ApplicationContextInitializer=\
+  ai.knowhub.core.SpringUtil

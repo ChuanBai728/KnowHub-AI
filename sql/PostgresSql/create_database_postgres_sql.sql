@@ -1,0 +1,1 @@
+CREATE DATABASE knowhub_pgvector WITH ENCODING 'UTF8';

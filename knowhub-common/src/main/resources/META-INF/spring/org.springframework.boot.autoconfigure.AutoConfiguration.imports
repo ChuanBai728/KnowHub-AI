@@ -1,0 +1,2 @@
+ai.knowhub.config.KnowHubCommonAutoConfig
+ai.knowhub.database.mybatisplus.MybatisPlusAutoConfiguration

@@ -1,0 +1,246 @@
+server:
+  port: 9082
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+prefix:
+  distinction:
+    name: knowhub
+spring:
+  application:
+    name: ${prefix.distinction.name:knowhub}-business-chat
+  data:
+    redis:
+      database: 0
+      host: 127.0.0.1
+      port: 6379
+      timeout: 3000
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3306/knowhub_business_chat?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+    username: root
+    password: ${MYSQL_PASSWORD:123456}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      pool-name: knowhub-app-hikari
+      maximum-pool-size: 10
+      minimum-idle: 2
+  kafka:
+    bootstrap-servers: 127.0.0.1:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: earliest
+  ai:
+    openai:
+      # OpenAI 兼容协议的服务入口。
+      base-url: https://token-plan-cn.xiaomimimo.com/
+      # OpenAI 兼容协议的访问密钥。
+      api-key: ${MIMO_API_KEY}
+      chat:
+        options:
+          model: mimo-v2.5
+          temperature: 0.5
+          maxTokens: 5000
+      embedding:
+        base-url: https://dashscope.aliyuncs.com/compatible-mode/
+        api-key: ${ALI_BAI_LIAN_API_KEY}
+        options:
+          model: text-embedding-v4
+  main:
+    allow-bean-definition-overriding: true
+  mvc:
+    pathmatch:
+      matching-strategy: ant_path_matcher
+    servlet:
+      load-on-startup: 1
+  jackson:
+    time-zone: GMT+8
+    date-format: yyyy-MM-dd HH:mm:ss
+mybatis-plus:
+  mapper-locations: classpath:mapper/*.xml
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    local-cache-scope: statement
+
+app:
+  admin-auth:
+    username: ${KNOWHUB_ADMIN_USERNAME:admin}
+    password: ${KNOWHUB_ADMIN_PASSWORD:admin123456}
+    token-secret: ${KNOWHUB_ADMIN_TOKEN_SECRET:knowhub-admin-token-secret-change-me}
+    token-expire-minutes: ${KNOWHUB_ADMIN_TOKEN_EXPIRE_MINUTES:720}
+  preview-mode:
+    enabled: ${KNOWHUB_PREVIEW_MODE_ENABLED:false}
+    message: ${KNOWHUB_PREVIEW_MODE_MESSAGE:线上环境为只读展示模式，仅开放浏览与检索能力}
+  chat:
+    recommendation-enabled: true
+    max-model-calls-per-run: 8
+    max-model-calls-per-thread: 40
+    max-tool-calls-per-run: 6
+    max-tool-calls-per-thread: 30
+    history-preview-turns: 4
+    system-prompt: |
+      你是 KnowHub AI 的智能对话助手。
+      你的目标是帮助用户获得可靠、结构化、可直接使用的答案。
+
+      回答原则：
+      1. 对于明显具有时效性、事实性、需要外部验证的问题，优先调用搜索工具。尤其是涉及"今天、明天、昨天、现在、当前、最新、本周、本月、今年"等相对时间的问题，必须以当前日期为准理解，并优先搜索核实。
+      2. 如果工具结果不足以支撑结论，要明确说明不确定性，不要编造事实。
+      3. 回答尽量结构化、清晰、简洁，适合直接返回给前端展示。
+      4. 不要在最终答案中暴露工具调用细节或内部推理格式。
+      5. 当已有信息足够时，直接给出最终答案，不要重复调用工具。
+    recommendation-prompt: |
+      你是推荐问题生成助手。
+      请根据最近几轮对话和最新一轮问答，生成 3 个适合继续追问的中文问题。
+
+      要求：
+      1. 返回 JSON 数组字符串，例如 ["问题1","问题2","问题3"]。
+      2. 每个问题都要自然、具体、可继续追问。
+      3. 不要和当前问题重复。
+      4. 每个问题尽量控制在 20 个字以内。
+    rag:
+      enabled: true
+      rewrite-enabled: true
+      rewrite-history-turns: 4
+      rewrite-options:
+        enabled: true
+        temperature: 0.2
+        top-p: 0.3
+        thinking: false
+      max-sub-questions: 4
+      vector-top-k: 8
+      keyword-top-k: 8
+      candidate-top-k: 10
+      final-top-k: 5
+      min-vector-similarity: 0.45
+      keyword-relative-score-floor: 0.35
+      keyword-channel-enabled: true
+      rerank-enabled: true
+      parent-evidence-max-chars: 2200
+      planning-history-max-chars: 1600
+      answer-history-max-chars: 1000
+      total-evidence-max-chars: 5200
+      per-sub-question-evidence-max-chars: 2200
+      no-evidence-reply: 当前没有从当前文档中检索到足够证据，暂时不能给出可靠结论。你可以补充更具体的章节名、标题或关键词后再试。
+      answer-system-prompt: |
+        你是 KnowHub AI 的企业知识问答助手。
+        你的回答必须严格基于给定证据，不要编造证据中不存在的事实。
+        如果证据不足以支持明确结论，请直接说明资料不足。
+        如果问题被拆分成多个子问题，请按编号逐一回答。
+        如果使用了证据编号，请在对应句子末尾标注 [1][2] 这类引用编号。
+      history-summary:
+        enabled: true
+        keep-recent-turns: 4
+        compression-batch-turns: 6
+        recent-transcript-max-chars: 2200
+        summary-max-chars: 1400
+      rerank:
+        enabled: false
+        url: https://dashscope.aliyuncs.com/compatible-mode/v1/rerank
+        api-key: ${ALI_BAI_LIAN_API_KEY}
+        model: gte-rerank-v2
+        top-n: 5
+
+  tavily:
+    enabled: true
+    base-url: https://api.tavily.com
+    search-path: /search
+    api-key: ${TAVILY_API_KEY}
+    topic: general
+    search-depth: advanced
+    max-results: 5
+    include-answer: true
+    include-raw-content: false
+
+  manage:
+    minio:
+      endpoint: http://127.0.0.1:9000
+      access-key: minioadmin
+      secret-key: minioadmin
+      bucket-name: ${prefix.distinction.name:knowhub}-document
+      object-prefix: rag/document
+      parsed-text-prefix: rag/parsed-text
+    kafka:
+      parse-topic: knowhub-document-parse-route
+      index-topic: knowhub-document-index-build
+      group-id: knowhub-document-manage
+      auto-create-topics: true
+    chunk:
+      recursive-max-chars: 800
+      recursive-overlap-chars: 120
+      semantic-max-chars: 700
+      semantic-min-chars: 240
+      semantic-similarity-threshold: 0.18
+      llm-enabled: false
+      llm-max-chars: 3500
+      recommend-llm-when-low-quality: true
+    milvus:
+      enabled: false
+      host: 127.0.0.1
+      port: 19530
+      database: default
+      collection-name: knowhub_document_embedding
+      dimension: 1024
+      index-type: HNSW
+      metric-type: COSINE
+    pgvector:
+      enabled: true
+      host: 127.0.0.1
+      port: 5432
+      database: knowhub_pgvector
+      schema: public
+      username: postgres
+      password: ${PGVECTOR_PASSWORD:postgres}
+      pool-name: knowhub-manage-pgvector-hikari
+      maximum-pool-size: 5
+      minimum-idle: 1
+    elasticsearch:
+      enabled: true
+      uris:
+        - http://127.0.0.1:9200
+      username: elastic
+      password: ${ELASTICSEARCH_PASSWORD:elastic}
+      index-name: ${prefix.distinction.name:knowhub}-document-keyword
+      navigation-index-name: ${prefix.distinction.name:knowhub}-document-navigation
+      route-index-name: ${prefix.distinction.name:knowhub}-knowledge-route
+      analyzer: ik_max_word
+      search-analyzer: ik_smart
+      connect-timeout-millis: 3000
+      socket-timeout-millis: 5000
+    neo4j:
+      enabled: true
+      uri: bolt://127.0.0.1:7687
+      username: neo4j
+      password: ${NEO4J_PASSWORD:12345678}
+      database: neo4j
+      query-timeout-seconds: 5
+
+logging:
+  level:
+    org.springframework.ai: DEBUG
+    com.alibaba.cloud.ai: DEBUG
+    ai.knowhub.chat: INFO
+    ai.knowhub.document: INFO
+
+management:
+  metrics:
+    tags:
+      application: knowhub-app
+  endpoint:
+    health:
+      show-details: always
+  endpoints:
+    web:
+      exposure:
+        include: '*'
+  health:
+    elasticsearch:
+      enabled: false
+  prometheus:
+    metrics:
+      export:
+        enabled: true
