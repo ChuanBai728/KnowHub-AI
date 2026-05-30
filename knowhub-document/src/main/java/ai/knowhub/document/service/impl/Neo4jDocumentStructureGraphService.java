@@ -19,6 +19,13 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
+/**
+ * Neo4j 结构图谱查询实现。
+ *
+ * 基于 Neo4j 中的文档结构节点图，提供章节查询、父子导航、兄弟遍历、
+ * 列表项检索和模糊搜索等能力。支持按标题、编码、路径等多种方式定位章节。
+ * 文本匹配时会去除空白和 Markdown 标记后做大小写不敏感比较。
+ */
 @Service
 @ConditionalOnBean(name = "documentManageNeo4jDriver")
 public class Neo4jDocumentStructureGraphService implements DocumentStructureGraphService {

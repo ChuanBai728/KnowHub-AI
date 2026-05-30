@@ -17,6 +17,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Neo4j 结构图谱投影实现。
+ *
+ * 将文档的结构节点写入 Neo4j，建立 PARENT_OF（父子）和 NEXT_SIBLING（兄弟）关系边。
+ * 章节节点打上 KnowHubDocumentSection 标签，步骤/列表项打上 KnowHubDocumentItem 标签。
+ * 投影前会先删除该文档的旧图谱数据，保证幂等。
+ */
 @Slf4j
 @Service
 @ConditionalOnBean(name = "documentManageNeo4jDriver")

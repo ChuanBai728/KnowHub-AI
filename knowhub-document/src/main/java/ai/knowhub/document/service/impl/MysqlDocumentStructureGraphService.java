@@ -30,9 +30,9 @@ import java.util.Objects;
  *     模拟图结构的父子、兄弟遍历
  *   - 本质上是将关系型数据"伪装"成图查询
  *
- * 与 MySQL 实现的区别：
- *   - MySQL 方案：每次查询都加载所有节点到内存，通过 Java 代码过滤和排序
- *   - MySQL 方案：直接用 Cypher 查询语言在数据库层遍历图结构，性能更优
+ * 与 Neo4j 实现的区别：
+ *   - MySQL 方案（本类）：每次查询都加载所有节点到内存，通过 Java 代码过滤和排序
+ *   - Neo4j 方案：直接用 Cypher 查询语言在数据库层遍历图结构，性能更优
  *
  * 使用场景：
  *   - 当 MySQL 未配置或该文档没有图数据时，CompositeDocumentStructureGraphService 会回退到本类

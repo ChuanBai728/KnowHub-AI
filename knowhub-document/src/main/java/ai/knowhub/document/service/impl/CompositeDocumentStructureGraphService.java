@@ -11,6 +11,14 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 
+/**
+ * 组合式结构图谱服务（策略路由）。
+ *
+ * 标记为 @Primary，优先于 MySQL 和 Neo4j 实现被注入。
+ * 运行时根据文档是否有 Neo4j 图谱数据自动选择后端：
+ * - 有 Neo4j 数据时使用 Neo4jDocumentStructureGraphService
+ * - 否则回退到 MysqlDocumentStructureGraphService
+ */
 @Slf4j
 @AllArgsConstructor
 @Primary

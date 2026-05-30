@@ -10,6 +10,12 @@ import org.springframework.context.annotation.Configuration;
 
 import java.util.concurrent.TimeUnit;
 
+/**
+ * Neo4j 驱动自动配置。
+ *
+ * 当 app.manage.neo4j.enabled=true 时，创建并注册 Neo4j Driver Bean，
+ * 供结构图谱投影和查询服务使用。连接超时时间从配置文件中读取。
+ */
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(prefix = "app.manage.neo4j", name = "enabled", havingValue = "true")
 public class DocumentManageNeo4jConfiguration {
