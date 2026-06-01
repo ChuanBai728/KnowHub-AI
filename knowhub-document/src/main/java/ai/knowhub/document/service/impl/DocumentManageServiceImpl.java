@@ -94,6 +94,8 @@ import ai.knowhub.exception.KnowHubFrameException;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -745,7 +747,7 @@ public class DocumentManageServiceImpl implements DocumentManageService {
             Map.of("planId", dto.getPlanId(), "strategySnapshot", plan.getStrategySnapshot()));
 
         // 和解析一样，索引构建也交给 Kafka 异步执行，HTTP 接口只返回任务编号。
-        kafkaProducer.sendIndexBuild(new DocumentIndexBuildMessage(document.getId(), taskId, dto.getPlanId()));
+        sendIndexBuildAfterCommit(new DocumentIndexBuildMessage(document.getId(), taskId, dto.getPlanId()));
 
         return new DocumentIndexBuildVo(
             document.getId(),
@@ -757,6 +759,22 @@ public class DocumentManageServiceImpl implements DocumentManageService {
             document.getIndexStatus(),
             enumMsg(DocumentIndexStatusEnum.getRc(document.getIndexStatus()))
         );
+    }
+
+    /**
+     * Send index build message only after the task transaction is committed.
+     */
+    private void sendIndexBuildAfterCommit(DocumentIndexBuildMessage message) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            kafkaProducer.sendIndexBuild(message);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                kafkaProducer.sendIndexBuild(message);
+            }
+        });
     }
 
     /**
