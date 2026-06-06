@@ -37,20 +37,20 @@ spring:
       auto-offset-reset: earliest
   ai:
     openai:
-      # OpenAI 兼容协议的服务入口。
-      base-url: https://token-plan-cn.xiaomimimo.com/
-      # OpenAI 兼容协议的访问密钥。
-      api-key: ${MIMO_API_KEY}
+      # OpenAI 兼容协议的服务入口（硅基流动）。
+      base-url: https://api.siliconflow.cn/v1
+      # 硅基流动 API Key。
+      api-key: ${SILICONFLOW_API_KEY}
       chat:
         options:
-          model: mimo-v2.5
+          model: Qwen/Qwen2.5-72B-Instruct
           temperature: 0.5
           maxTokens: 5000
       embedding:
-        base-url: https://dashscope.aliyuncs.com/compatible-mode/
-        api-key: ${ALI_BAI_LIAN_API_KEY}
+        base-url: https://api.siliconflow.cn/v1
+        api-key: ${SILICONFLOW_API_KEY}
         options:
-          model: text-embedding-v4
+          model: BAAI/bge-m3
   main:
     allow-bean-definition-overriding: true
   mvc:
@@ -108,6 +108,7 @@ app:
       rewrite-history-turns: 4
       rewrite-options:
         enabled: true
+        model: Qwen/Qwen2.5-14B-Instruct
         temperature: 0.2
         top-p: 0.3
         thinking: false
@@ -139,10 +140,10 @@ app:
         recent-transcript-max-chars: 2200
         summary-max-chars: 1400
       rerank:
-        enabled: false
-        url: https://dashscope.aliyuncs.com/compatible-mode/v1/rerank
-        api-key: ${ALI_BAI_LIAN_API_KEY}
-        model: gte-rerank-v2
+        enabled: true
+        url: https://api.siliconflow.cn/v1/rerank
+        api-key: ${SILICONFLOW_API_KEY}
+        model: BAAI/bge-reranker-v2-m3
         top-n: 5
 
   tavily:
