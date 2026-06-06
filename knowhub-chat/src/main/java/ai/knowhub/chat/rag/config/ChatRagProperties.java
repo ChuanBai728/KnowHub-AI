@@ -280,6 +280,13 @@ public class ChatRagProperties {
          * 查询改写不需要复杂推理，关闭思考模式可以加快响应。
          */
         private Boolean thinking = Boolean.FALSE;
+
+        /**
+         * 改写使用的模型名称。
+         * 为空时使用全局默认模型。可配置为更轻量的模型以加快改写速度，
+         * 例如 "qwen-turbo"（走 DashScope 百炼 API，与 embedding/rerank 同一 API Key）。
+         */
+        private String model;
     }
 
     /**

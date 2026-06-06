@@ -158,6 +158,9 @@ public class ChatQueryRewriteService {
             rewriteOptions.getTopP(),
             rewriteOptions.getThinking());
         OpenAiChatOptions.Builder builder = OpenAiChatOptions.builder();
+        if (rewriteOptions.getModel() != null && !rewriteOptions.getModel().isBlank()) {
+            builder.model(rewriteOptions.getModel());
+        }
         if (rewriteOptions.getTemperature() != null) {
             builder.temperature(rewriteOptions.getTemperature());
         }
