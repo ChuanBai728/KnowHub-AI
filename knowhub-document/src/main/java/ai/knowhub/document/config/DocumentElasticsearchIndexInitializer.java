@@ -137,11 +137,17 @@ public class DocumentElasticsearchIndexInitializer {
                 // documentName：文档名称，text 类型支持全文检索
                 .properties("documentName", property -> property.text(text -> text
                     .analyzer(analyzer)
-                    .searchAnalyzer(searchAnalyzer)))
+                    .searchAnalyzer(searchAnalyzer)
+                    .fields("raw", field -> field.keyword(keyword -> keyword.ignoreAbove(512)))
+                    .fields("standard", field -> field.text(value -> value.analyzer("standard").searchAnalyzer("standard")))
+                    .fields("english", field -> field.text(value -> value.analyzer("english").searchAnalyzer("english")))))
                 // sectionPath：切块在文档结构中的路径（如 "第1章 > 第2节 > 第3小节"）
                 .properties("sectionPath", property -> property.text(text -> text
                     .analyzer(analyzer)
-                    .searchAnalyzer(searchAnalyzer)))
+                    .searchAnalyzer(searchAnalyzer)
+                    .fields("raw", field -> field.keyword(keyword -> keyword.ignoreAbove(1024)))
+                    .fields("standard", field -> field.text(value -> value.analyzer("standard").searchAnalyzer("standard")))
+                    .fields("english", field -> field.text(value -> value.analyzer("english").searchAnalyzer("english")))))
                 // structureNodeId：关联的结构节点 ID
                 .properties("structureNodeId", property -> property.long_(number -> number))
                 // structureNodeType：结构节点类型（如标题、段落、表格等）
@@ -155,7 +161,10 @@ public class DocumentElasticsearchIndexInitializer {
                 // knowledgeScopeName：知识范围名称，text 类型支持模糊搜索
                 .properties("knowledgeScopeName", property -> property.text(text -> text
                     .analyzer(analyzer)
-                    .searchAnalyzer(searchAnalyzer)))
+                    .searchAnalyzer(searchAnalyzer)
+                    .fields("raw", field -> field.keyword(keyword -> keyword.ignoreAbove(256)))
+                    .fields("standard", field -> field.text(value -> value.analyzer("standard").searchAnalyzer("standard")))
+                    .fields("english", field -> field.text(value -> value.analyzer("english").searchAnalyzer("english")))))
                 // businessCategory：业务分类标签
                 .properties("businessCategory", property -> property.keyword(keyword -> keyword))
                 // documentTags：文档标签，keyword 数组类型
@@ -163,7 +172,9 @@ public class DocumentElasticsearchIndexInitializer {
                 // chunkText：切块正文内容，text 类型用于全文检索，是 RAG 检索的核心字段
                 .properties("chunkText", property -> property.text(text -> text
                     .analyzer(analyzer)
-                    .searchAnalyzer(searchAnalyzer)))
+                    .searchAnalyzer(searchAnalyzer)
+                    .fields("standard", field -> field.text(value -> value.analyzer("standard").searchAnalyzer("standard")))
+                    .fields("english", field -> field.text(value -> value.analyzer("english").searchAnalyzer("english")))))
             )
         );
     }

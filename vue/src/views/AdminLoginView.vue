@@ -54,7 +54,7 @@ const route = useRoute()
 
 const form = reactive({
   username: 'admin',
-  password: 'admin123456'
+  password: 'KnowHub2024!'
 })
 const errorMessage = ref('')
 const submitting = ref(false)

@@ -142,27 +142,67 @@ public class KnowledgeRouteElasticsearchIndexInitializer {
                 // scopeCode：知识范围编码
                 .properties("scopeCode", property -> property.keyword(keyword -> keyword))
                 // scopeName：知识范围名称，text 全文检索
-                .properties("scopeName", property -> property.text(text -> text.analyzer(analyzer).searchAnalyzer(searchAnalyzer)))
+                .properties("scopeName", property -> property.text(text -> text
+                    .analyzer(analyzer)
+                    .searchAnalyzer(searchAnalyzer)
+                    .fields("raw", field -> field.keyword(keyword -> keyword.ignoreAbove(256)))
+                    .fields("standard", field -> field.text(value -> value.analyzer("standard").searchAnalyzer("standard")))
+                    .fields("english", field -> field.text(value -> value.analyzer("english").searchAnalyzer("english")))))
                 // topicCode：知识主题编码
                 .properties("topicCode", property -> property.keyword(keyword -> keyword))
                 // topicName：知识主题名称，text 全文检索
-                .properties("topicName", property -> property.text(text -> text.analyzer(analyzer).searchAnalyzer(searchAnalyzer)))
+                .properties("topicName", property -> property.text(text -> text
+                    .analyzer(analyzer)
+                    .searchAnalyzer(searchAnalyzer)
+                    .fields("raw", field -> field.keyword(keyword -> keyword.ignoreAbove(256)))
+                    .fields("standard", field -> field.text(value -> value.analyzer("standard").searchAnalyzer("standard")))
+                    .fields("english", field -> field.text(value -> value.analyzer("english").searchAnalyzer("english")))))
                 // documentName：文档名称，text 全文检索
-                .properties("documentName", property -> property.text(text -> text.analyzer(analyzer).searchAnalyzer(searchAnalyzer)))
+                .properties("documentName", property -> property.text(text -> text
+                    .analyzer(analyzer)
+                    .searchAnalyzer(searchAnalyzer)
+                    .fields("raw", field -> field.keyword(keyword -> keyword.ignoreAbove(512)))
+                    .fields("standard", field -> field.text(value -> value.analyzer("standard").searchAnalyzer("standard")))
+                    .fields("english", field -> field.text(value -> value.analyzer("english").searchAnalyzer("english")))))
                 // businessCategory：业务分类
                 .properties("businessCategory", property -> property.keyword(keyword -> keyword))
                 // displayName：显示名称，text 全文检索
-                .properties("displayName", property -> property.text(text -> text.analyzer(analyzer).searchAnalyzer(searchAnalyzer)))
+                .properties("displayName", property -> property.text(text -> text
+                    .analyzer(analyzer)
+                    .searchAnalyzer(searchAnalyzer)
+                    .fields("raw", field -> field.keyword(keyword -> keyword.ignoreAbove(512)))
+                    .fields("standard", field -> field.text(value -> value.analyzer("standard").searchAnalyzer("standard")))
+                    .fields("english", field -> field.text(value -> value.analyzer("english").searchAnalyzer("english")))))
                 // descriptionText：描述文本，text 全文检索（核心匹配字段）
-                .properties("descriptionText", property -> property.text(text -> text.analyzer(analyzer).searchAnalyzer(searchAnalyzer)))
+                .properties("descriptionText", property -> property.text(text -> text
+                    .analyzer(analyzer)
+                    .searchAnalyzer(searchAnalyzer)
+                    .fields("standard", field -> field.text(value -> value.analyzer("standard").searchAnalyzer("standard")))
+                    .fields("english", field -> field.text(value -> value.analyzer("english").searchAnalyzer("english")))))
                 // aliasesText：别名文本，text 全文检索（扩大匹配范围）
-                .properties("aliasesText", property -> property.text(text -> text.analyzer(analyzer).searchAnalyzer(searchAnalyzer)))
+                .properties("aliasesText", property -> property.text(text -> text
+                    .analyzer(analyzer)
+                    .searchAnalyzer(searchAnalyzer)
+                    .fields("standard", field -> field.text(value -> value.analyzer("standard").searchAnalyzer("standard")))
+                    .fields("english", field -> field.text(value -> value.analyzer("english").searchAnalyzer("english")))))
                 // examplesText：示例文本，text 全文检索
-                .properties("examplesText", property -> property.text(text -> text.analyzer(analyzer).searchAnalyzer(searchAnalyzer)))
+                .properties("examplesText", property -> property.text(text -> text
+                    .analyzer(analyzer)
+                    .searchAnalyzer(searchAnalyzer)
+                    .fields("standard", field -> field.text(value -> value.analyzer("standard").searchAnalyzer("standard")))
+                    .fields("english", field -> field.text(value -> value.analyzer("english").searchAnalyzer("english")))))
                 // summaryText：摘要文本，text 全文检索
-                .properties("summaryText", property -> property.text(text -> text.analyzer(analyzer).searchAnalyzer(searchAnalyzer)))
+                .properties("summaryText", property -> property.text(text -> text
+                    .analyzer(analyzer)
+                    .searchAnalyzer(searchAnalyzer)
+                    .fields("standard", field -> field.text(value -> value.analyzer("standard").searchAnalyzer("standard")))
+                    .fields("english", field -> field.text(value -> value.analyzer("english").searchAnalyzer("english")))))
                 // routeText：路由综合文本，text 全文检索
-                .properties("routeText", property -> property.text(text -> text.analyzer(analyzer).searchAnalyzer(searchAnalyzer)))
+                .properties("routeText", property -> property.text(text -> text
+                    .analyzer(analyzer)
+                    .searchAnalyzer(searchAnalyzer)
+                    .fields("standard", field -> field.text(value -> value.analyzer("standard").searchAnalyzer("standard")))
+                    .fields("english", field -> field.text(value -> value.analyzer("english").searchAnalyzer("english")))))
                 // entityTerms：实体关键词，keyword 精确匹配
                 .properties("entityTerms", property -> property.keyword(keyword -> keyword))
                 // tags：标签，keyword 精确筛选

@@ -261,7 +261,8 @@ public class ChatPreparationOrchestrator {
             KnowledgeRouteDecision routeDecision = knowledgeRouteService.route(question, rewriteQuestion);
             knowledgeRouteService.recordAutoRoute(conversationId, taskInfo.exchangeId(), question, rewriteQuestion, routeDecision);
             List<DocumentRouteCandidate> candidateDocuments = selectAutoCandidates(routeDecision, question, rewriteQuestion);
-            // 如果需要澄清（范围不清晰），直接返回澄清模式的执行计划
+            // 如果需要澄清（范围不清晰），直接返回澄清模式的执行计划。
+            // 评测/批处理模式下可关闭澄清，让问题继续进入 RAG 检索链路。
             if (shouldAskClarification(routeDecision, candidateDocuments)) {
                 return basePlan(question, chatMode, memoryContext, historyPlanningContext, historySummary, answerHistoryContext, currentDate, currentDateText,
                     requiresCurrentDateAnchoring, requiresFreshSearch)
@@ -335,16 +336,21 @@ public class ChatPreparationOrchestrator {
             : traceRecorder.startStage(ConversationTraceStageCode.ROUTE, ExecutionMode.RETRIEVAL.name(), "正在判定图查询还是混合检索。", null);
         DocumentNavigationDecision navigationDecision;
         try {
-            // 文档导航路由会判断：普通证据检索够不够，还是应该进入章节/条款/图结构查询。
-            navigationDecision = documentQuestionRouter.route(routedDocumentId, question, rewriteResult);
+            if (properties.isForceRetrievalMode()) {
+                navigationDecision = null;
+            }
+            else {
+                // 文档导航路由会判断：普通证据检索够不够，还是应该进入章节/条款/图结构查询。
+                navigationDecision = documentQuestionRouter.route(routedDocumentId, question, rewriteResult);
+            }
             if (traceRecorder != null) {
                 traceRecorder.completeStage(routeStage, "执行路由完成。", Map.of(
-                    "executionMode", navigationDecision == null || navigationDecision.getExecutionMode() == null ? "" : navigationDecision.getExecutionMode().name(),
+                    "executionMode", properties.isForceRetrievalMode() ? ExecutionMode.RETRIEVAL.name() : navigationDecision == null || navigationDecision.getExecutionMode() == null ? "" : navigationDecision.getExecutionMode().name(),
                     "targetSectionHint", navigationDecision == null || navigationDecision.getStructureAnchor() == null ? "" : StrUtil.blankToDefault(navigationDecision.getStructureAnchor().getTargetSectionHint(), ""),
                     "targetItemIndex", navigationDecision == null || navigationDecision.getItemAnchor() == null || navigationDecision.getItemAnchor().getItemIndex() == null
                         ? ""
                         : String.valueOf(navigationDecision.getItemAnchor().getItemIndex()),
-                    "navigationSummary", navigationDecision == null ? "" : StrUtil.blankToDefault(navigationDecision.getSummaryText(), "")
+                    "navigationSummary", properties.isForceRetrievalMode() ? "forceRetrievalMode" : navigationDecision == null ? "" : StrUtil.blankToDefault(navigationDecision.getSummaryText(), "")
                 ));
             }
         }
@@ -356,7 +362,9 @@ public class ChatPreparationOrchestrator {
         }
 
         // 从导航决策中提取执行模式、检索问题和子问题
-        ExecutionMode executionMode = navigationDecision == null || navigationDecision.getExecutionMode() == null
+        ExecutionMode executionMode = properties.isForceRetrievalMode()
+            ? ExecutionMode.RETRIEVAL
+            : navigationDecision == null || navigationDecision.getExecutionMode() == null
             ? ExecutionMode.RETRIEVAL
             : navigationDecision.getExecutionMode();
         String retrievalQuestion = navigationDecision == null || navigationDecision.getRetrievalPlan() == null
@@ -621,10 +629,9 @@ public class ChatPreparationOrchestrator {
                                                               String question,
                                                               String rewriteQuestion) {
         if (routeDecision == null || routeDecision.getDocuments() == null || routeDecision.getDocuments().isEmpty()) {
-            return fallbackDocuments(question, rewriteQuestion, 5);
+            return fallbackDocuments(question, rewriteQuestion, resolveRouteDocumentTopK());
         }
-        // 高置信度时只取前 3 个候选，低置信度时取前 5 个
-        int candidateLimit = routeDecision.getConfidence() != null && routeDecision.getConfidence().doubleValue() >= 0.80D ? 3 : 5;
+        int candidateLimit = resolveRouteDocumentTopK();
         List<DocumentRouteCandidate> candidates = routeDecision.getDocuments().stream()
             .filter(item -> StrUtil.isNotBlank(item.getDocumentId()) && StrUtil.isNotBlank(item.getLastIndexTaskId()))
             .limit(candidateLimit)
@@ -637,6 +644,10 @@ public class ChatPreparationOrchestrator {
             return mergeCandidates(candidates, fallbackDocuments(question, rewriteQuestion, candidateLimit), candidateLimit);
         }
         return candidates;
+    }
+
+    private int resolveRouteDocumentTopK() {
+        return Math.max(1, properties.getRouteDocumentTopK());
     }
 
     /**
@@ -698,6 +709,9 @@ public class ChatPreparationOrchestrator {
      */
     private boolean shouldAskClarification(KnowledgeRouteDecision routeDecision,
                                            List<DocumentRouteCandidate> candidateDocuments) {
+        if (!properties.isClarificationEnabled() || properties.isForceRetrievalMode()) {
+            return false;
+        }
         // 澄清判断保护回答质量：范围不清时先问清楚，比误选文档后编造答案更安全。
         if (candidateDocuments == null || candidateDocuments.isEmpty()) {
             return true;

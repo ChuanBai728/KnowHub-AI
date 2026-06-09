@@ -86,7 +86,8 @@ public class VectorRetrievalChannel implements RetrievalChannel {
      */
     @Override
     public boolean supports(ConversationExecutionPlan plan) {
-        return plan.getSelectedDocumentId() != null;
+        return plan.getSelectedDocumentId() != null
+            || (plan.getRetrievalDocumentIds() != null && !plan.getRetrievalDocumentIds().isEmpty());
     }
 
     /**

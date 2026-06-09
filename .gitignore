@@ -52,4 +52,8 @@ build/
 
 ### Sensitive ###
 knowhub-app/src/main/resources/application.yaml
+DEPLOYMENT.md
+CLAUDE.md
+AGENTS.md
+evaluation/
 

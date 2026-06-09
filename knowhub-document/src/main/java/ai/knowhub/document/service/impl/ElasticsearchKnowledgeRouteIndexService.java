@@ -161,7 +161,7 @@ public class ElasticsearchKnowledgeRouteIndexService implements KnowledgeRouteIn
         try {
             SearchResponse<KnowledgeRouteIndexRecord> response = elasticsearchClient.search(search -> search
                     .index(properties.getElasticsearch().getRouteIndexName())
-                    .size(Math.max(1, Math.min(size, 10)))
+                    .size(Math.max(1, Math.min(size, 50)))
                     .query(query -> query.bool(bool -> {
                         // 必须匹配实体类型
                         bool.filter(filter -> filter.term(term -> term.field("entityType").value(entityType)));
@@ -171,10 +171,46 @@ public class ElasticsearchKnowledgeRouteIndexService implements KnowledgeRouteIn
                             .query(routingText)
                             .boost(12.0f)
                         ));
+                        bool.should(should -> should.matchPhrase(matchPhrase -> matchPhrase
+                            .field("displayName.raw")
+                            .query(routingText)
+                            .boost(16.0f)
+                        ));
                         // 多字段加权匹配
                         bool.should(should -> should.multiMatch(multiMatch -> multiMatch
                             .query(routingText)
-                            .fields("displayName^10", "aliasesText^8", "examplesText^6", "summaryText^5", "routeText^4", "descriptionText^3")
+                            .fields(
+                                "displayName^10",
+                                "displayName.raw^16",
+                                "displayName.standard^12",
+                                "displayName.english^12",
+                                "documentName^8",
+                                "documentName.raw^14",
+                                "documentName.standard^10",
+                                "documentName.english^10",
+                                "scopeName^6",
+                                "scopeName.raw^9",
+                                "scopeName.standard^7",
+                                "scopeName.english^7",
+                                "topicName^6",
+                                "topicName.raw^9",
+                                "topicName.standard^7",
+                                "topicName.english^7",
+                                "aliasesText^8",
+                                "aliasesText.standard^9",
+                                "aliasesText.english^9",
+                                "examplesText^6",
+                                "examplesText.standard^7",
+                                "examplesText.english^7",
+                                "summaryText^5",
+                                "summaryText.standard^6",
+                                "summaryText.english^6",
+                                "routeText^4",
+                                "routeText.standard^5",
+                                "routeText.english^5",
+                                "descriptionText^3",
+                                "descriptionText.standard^4",
+                                "descriptionText.english^4")
                             .type(TextQueryType.BestFields)
                         ));
                         // 实体关键词精确匹配

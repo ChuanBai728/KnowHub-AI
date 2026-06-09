@@ -113,14 +113,19 @@ app:
         top-p: 0.3
         thinking: false
       max-sub-questions: 4
-      vector-top-k: 8
-      keyword-top-k: 8
-      candidate-top-k: 10
+      vector-top-k: 20
+      keyword-top-k: 20
+      candidate-top-k: 30
+      pre-rerank-top-k: 40
       final-top-k: 5
       min-vector-similarity: 0.45
       keyword-relative-score-floor: 0.35
       keyword-channel-enabled: true
       rerank-enabled: true
+      clarification-enabled: true
+      force-retrieval-mode: false
+      route-document-top-k: 20
+      document-level-dedup-enabled: true
       parent-evidence-max-chars: 2200
       planning-history-max-chars: 1600
       answer-history-max-chars: 1000

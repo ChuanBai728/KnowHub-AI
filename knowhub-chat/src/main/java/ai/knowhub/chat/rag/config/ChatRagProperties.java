@@ -70,14 +70,14 @@ public class ChatRagProperties {
      * 每个子问题在向量通道检索时，最多取语义最相似的 K 个文档片段。
      * 默认返回 8 个。
      */
-    private int vectorTopK = 8;
+    private int vectorTopK = 20;
 
     /**
      * 关键词检索返回的最大文档数（Top-K）。
      * 每个子问题在关键词通道检索时，最多取关键词匹配得分最高的 K 个文档片段。
      * 默认返回 8 个。
      */
-    private int keywordTopK = 8;
+    private int keywordTopK = 20;
 
     /**
      * RRF 融合后的候选文档数。
@@ -85,7 +85,12 @@ public class ChatRagProperties {
      * 只保留得分最高的前 K 个候选文档进入后续处理。
      * 默认保留 10 个候选。
      */
-    private int candidateTopK = 10;
+    private int candidateTopK = 30;
+
+    /**
+     * Rerank 前保留的候选数量。可大于 candidateTopK，用于先扩大 RRF 召回池，再交给 rerank 精排。
+     */
+    private int preRerankTopK = 40;
 
     /**
      * 最终送入大模型的文档数。
@@ -177,6 +182,26 @@ public class ChatRagProperties {
      * 默认关闭。
      */
     private boolean rerankEnabled = true;
+
+    /**
+     * 是否启用澄清式对话。评测或批处理场景可关闭，让问题强制进入检索链路。
+     */
+    private boolean clarificationEnabled = true;
+
+    /**
+     * 强制检索模式。开启后 AUTO_DOCUMENT 低置信度也不进入澄清，并跳过图查询/Agent 分流，统一走 RAG 检索。
+     */
+    private boolean forceRetrievalMode = false;
+
+    /**
+     * 自动知识路由保留的候选文档数。评测模式建议放大到 20，降低过早收缩导致的漏召回。
+     */
+    private int routeDocumentTopK = 20;
+
+    /**
+     * 是否在 RRF 融合后按文档去重，避免同一文档多个 chunk 占满 TopK。
+     */
+    private boolean documentLevelDedupEnabled = true;
 
     /**
      * 无证据时的兜底回复话术。

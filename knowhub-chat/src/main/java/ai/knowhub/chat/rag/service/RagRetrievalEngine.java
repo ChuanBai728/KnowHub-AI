@@ -1,5 +1,6 @@
 package ai.knowhub.chat.rag.service;
 
+import cn.hutool.core.util.StrUtil;
 import lombok.extern.slf4j.Slf4j;
 import ai.knowhub.chat.model.ChannelExecutionVo;
 import ai.knowhub.chat.model.RetrievalResultVo;
@@ -360,7 +361,7 @@ public class RagRetrievalEngine {
 
         return holders.values().stream()
             .sorted((left, right) -> Double.compare(right.score, left.score))
-            .limit(properties.getCandidateTopK())
+            .limit(resolvePreRerankTopK())
             .map(holder -> {
 
                 holder.document.getMetadata().put(DocumentKnowledgeMetadataKeys.SCORE, holder.score);
@@ -380,13 +381,30 @@ public class RagRetrievalEngine {
         List<Document> documents = channelResult.getDocuments();
         for (int rank = 0; rank < documents.size(); rank++) {
             Document document = documents.get(rank);
-            String documentId = document.getId();
+            if (document == null) {
+                continue;
+            }
+            String documentId = candidateKey(document);
 
             double rrfScore = 1D / (RRF_K + rank + 1);
             CandidateHolder holder = holders.computeIfAbsent(documentId, ignored -> new CandidateHolder(document));
             holder.score += rrfScore;
             holder.channels.add(channelResult.getChannelName());
         }
+    }
+
+    private int resolvePreRerankTopK() {
+        return Math.max(1, Math.max(properties.getCandidateTopK(), properties.getPreRerankTopK()));
+    }
+
+    private String candidateKey(Document document) {
+        if (properties.isDocumentLevelDedupEnabled()) {
+            Object documentId = document.getMetadata().get(DocumentKnowledgeMetadataKeys.DOCUMENT_ID);
+            if (documentId != null && StrUtil.isNotBlank(String.valueOf(documentId))) {
+                return "doc:" + documentId;
+            }
+        }
+        return StrUtil.blankToDefault(document.getId(), String.valueOf(System.identityHashCode(document)));
     }
 
     /**

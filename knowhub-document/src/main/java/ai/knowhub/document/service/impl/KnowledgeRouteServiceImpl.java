@@ -91,6 +91,9 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
     /** 候选向量计算的批量大小（避免一次 embedding 太多导致超时） */
     private static final int ROUTE_EMBEDDING_BATCH_SIZE = 10;
 
+    /** 自动知识路由默认保留的文档候选数，避免过早收缩导致 gold document 被截断。 */
+    private static final int ROUTE_DOCUMENT_CANDIDATE_LIMIT = 20;
+
     /** 文档 Mapper */
     private final KnowHubDocumentMapper documentMapper;
 
@@ -334,7 +337,7 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
             .filter(item -> item.maxScore > 0D || queryContext.semanticEnabled())
             .map(item -> new ScopeRouteCandidate(item.scopeCode, item.scopeName, scoreToBigDecimal(item.maxScore), item.reason))
             .sorted((left, right) -> right.getScore().compareTo(left.getScore()))
-            .limit(5)
+            .limit(ROUTE_DOCUMENT_CANDIDATE_LIMIT)
             .toList();
     }
 
@@ -459,7 +462,7 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
             .map(document -> buildDocumentRouteMaterial(document, profileMap.get(document.getId())))
             .toList();
         List<Double> semanticScores = computeSemanticScores(queryContext, materials.stream().map(DocumentRouteMaterial::routeText).toList());
-        Map<Long, Double> lexicalScores = searchLexicalScores(queryContext.routingText(), "document", 5).stream()
+        Map<Long, Double> lexicalScores = searchLexicalScores(queryContext.routingText(), "document", ROUTE_DOCUMENT_CANDIDATE_LIMIT).stream()
             .filter(hit -> hit.documentId() != null)
             .collect(Collectors.toMap(KnowledgeRouteIndexService.RouteLexicalHit::documentId, KnowledgeRouteIndexService.RouteLexicalHit::score, (left, right) -> left));
         return documents.stream()
@@ -476,7 +479,7 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
             ))
             .filter(candidate -> candidate.getScore().compareTo(BigDecimal.ZERO) > 0 || queryContext.semanticEnabled())
             .sorted((left, right) -> right.getScore().compareTo(left.getScore()))
-            .limit(5)
+            .limit(ROUTE_DOCUMENT_CANDIDATE_LIMIT)
             .toList();
     }
 

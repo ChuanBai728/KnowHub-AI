@@ -259,23 +259,47 @@ public class ElasticsearchDocumentKeywordSearchGateway implements DocumentKeywor
                             .query(retrievalQuery)
                             .boost(5.0f)
                         ));
+                        bool.should(should -> should.matchPhrase(matchPhrase -> matchPhrase
+                            .field("chunkText.english")
+                            .query(retrievalQuery)
+                            .boost(5.5f)
+                        ));
                         // 文档名短语匹配（权重 4.0）
                         bool.should(should -> should.matchPhrase(matchPhrase -> matchPhrase
                             .field("documentName")
                             .query(retrievalQuery)
                             .boost(4.0f)
                         ));
+                        bool.should(should -> should.matchPhrase(matchPhrase -> matchPhrase
+                            .field("documentName.raw")
+                            .query(retrievalQuery)
+                            .boost(9.0f)
+                        ));
                         // 多字段最佳匹配（sectionPath^6, documentName^4, knowledgeScopeName^3, chunkText）
                         bool.should(should -> should.multiMatch(multiMatch -> multiMatch
                             .query(retrievalQuery)
-                            .fields("sectionPath^6", "documentName^4", "knowledgeScopeName^3", "chunkText")
+                            .fields(
+                                "sectionPath^6",
+                                "sectionPath.standard^7",
+                                "sectionPath.english^7",
+                                "sectionPath.raw^8",
+                                "documentName^4",
+                                "documentName.standard^6",
+                                "documentName.english^6",
+                                "documentName.raw^9",
+                                "knowledgeScopeName^3",
+                                "knowledgeScopeName.standard^4",
+                                "knowledgeScopeName.english^4",
+                                "chunkText",
+                                "chunkText.standard^2",
+                                "chunkText.english^3")
                             .type(TextQueryType.BestFields)
                         ));
                         // 业务分类匹配（如果提供了业务分类提示）
                         if (filters != null && CollUtil.isNotEmpty(filters.getBusinessCategoryHints())) {
                             bool.should(should -> should.multiMatch(multiMatch -> multiMatch
                                 .query(String.join(" ", filters.getBusinessCategoryHints()))
-                                .fields("businessCategory^5", "knowledgeScopeName^2")
+                                .fields("businessCategory^5", "knowledgeScopeName^2", "knowledgeScopeName.standard^3", "knowledgeScopeName.english^3")
                                 .type(TextQueryType.BestFields)
                             ));
                         }
@@ -283,7 +307,7 @@ public class ElasticsearchDocumentKeywordSearchGateway implements DocumentKeywor
                         if (filters != null && CollUtil.isNotEmpty(filters.getDocumentTagHints())) {
                             bool.should(should -> should.multiMatch(multiMatch -> multiMatch
                                 .query(String.join(" ", filters.getDocumentTagHints()))
-                                .fields("documentTags^4", "documentName^2", "chunkText")
+                                .fields("documentTags^4", "documentName^2", "documentName.standard^3", "documentName.english^3", "chunkText", "chunkText.english^2")
                                 .type(TextQueryType.BestFields)
                             ));
                         }
@@ -291,7 +315,7 @@ public class ElasticsearchDocumentKeywordSearchGateway implements DocumentKeywor
                         if (filters != null && CollUtil.isNotEmpty(filters.getDocumentNameHints())) {
                             bool.should(should -> should.multiMatch(multiMatch -> multiMatch
                                 .query(String.join(" ", filters.getDocumentNameHints()))
-                                .fields("documentName^6", "sectionPath^2", "chunkText")
+                                .fields("documentName^6", "documentName.standard^7", "documentName.english^7", "documentName.raw^10", "sectionPath^2", "sectionPath.raw^4", "chunkText")
                                 .type(TextQueryType.BestFields)
                             ));
                         }
@@ -299,7 +323,7 @@ public class ElasticsearchDocumentKeywordSearchGateway implements DocumentKeywor
                         if (filters != null && CollUtil.isNotEmpty(filters.getSectionPathHints())) {
                             bool.should(should -> should.multiMatch(multiMatch -> multiMatch
                                 .query(String.join(" ", filters.getSectionPathHints()))
-                                .fields("sectionPath^7", "chunkText")
+                                .fields("sectionPath^7", "sectionPath.standard^8", "sectionPath.english^8", "sectionPath.raw^10", "chunkText", "chunkText.english^2")
                                 .type(TextQueryType.BestFields)
                             ));
                         }
@@ -307,7 +331,7 @@ public class ElasticsearchDocumentKeywordSearchGateway implements DocumentKeywor
                         if (CollUtil.isNotEmpty(queryContextHints)) {
                             bool.should(should -> should.multiMatch(multiMatch -> multiMatch
                                 .query(String.join(" ", queryContextHints))
-                                .fields("documentName^2", "knowledgeScopeName^2", "sectionPath^2", "chunkText")
+                                .fields("documentName^2", "documentName.english^3", "knowledgeScopeName^2", "knowledgeScopeName.english^3", "sectionPath^2", "sectionPath.english^3", "chunkText", "chunkText.english^2")
                                 .type(TextQueryType.BestFields)
                             ));
                         }

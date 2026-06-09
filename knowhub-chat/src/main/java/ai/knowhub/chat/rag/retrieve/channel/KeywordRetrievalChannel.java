@@ -96,7 +96,8 @@ public class KeywordRetrievalChannel implements RetrievalChannel {
     @Override
     public boolean supports(ConversationExecutionPlan plan) {
         return properties.isKeywordChannelEnabled()
-            && plan.getSelectedDocumentId() != null;
+            && (plan.getSelectedDocumentId() != null
+            || (plan.getRetrievalDocumentIds() != null && !plan.getRetrievalDocumentIds().isEmpty()));
     }
 
     /**
