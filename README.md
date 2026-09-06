@@ -177,8 +177,7 @@ npm run dev
 
 | 环境变量 | 用途 |
 | --- | --- |
-| `MIMO_API_KEY` | 对话模型 API Key |
-| `ALI_BAI_LIAN_API_KEY` | Embedding API Key |
+| `ALI_BAI_LIAN_API_KEY` | 百炼对话、Embedding 与 Rerank API Key |
 | `TAVILY_API_KEY` | Tavily 搜索工具 API Key，可选 |
 
 本地首次启动时，请根据实际依赖地址配置 MySQL、Redis、Kafka、PostgreSQL、Elasticsearch、MinIO、Milvus 和 Neo4j。

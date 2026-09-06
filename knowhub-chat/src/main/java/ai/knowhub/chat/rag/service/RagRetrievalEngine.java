@@ -24,6 +24,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -33,6 +34,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -211,14 +213,25 @@ public class RagRetrievalEngine {
                                                           ConversationTraceRecorder traceRecorder) {
 
         // 每个检索通道是一个策略：向量负责语义相似，关键词负责精确命中，两者可以同时工作。
+        Map<String, ChannelExecutionTiming> channelTimings = new ConcurrentHashMap<>();
         List<CompletableFuture<RetrievalChannelResult>> futures = retrievalChannels.stream()
-
             .filter(channel -> channel.supports(plan))
-            .map(channel -> CompletableFuture.supplyAsync(() -> channel.retrieve(subQuestion, plan), executorService)
+            .map(channel -> {
+                long startTimeMs = System.currentTimeMillis();
+                return CompletableFuture.supplyAsync(() -> channel.retrieve(subQuestion, plan), executorService)
                 .orTimeout(Math.max(properties.getChannelTimeoutMs(), 1L), TimeUnit.MILLISECONDS)
-                .exceptionally(throwable -> {
+                .handle((result, throwable) -> {
+                    long endTimeMs = System.currentTimeMillis();
+                    Throwable rootCause = throwable == null ? null : unwrapThrowable(throwable);
+                    channelTimings.put(channel.channelName(), new ChannelExecutionTiming(
+                        startTimeMs,
+                        endTimeMs,
+                        rootCause == null ? "" : StrUtil.blankToDefault(rootCause.getMessage(), rootCause.getClass().getSimpleName())
+                    ));
+                    if (throwable == null) {
+                        return result;
+                    }
                     // 单个通道失败时返回空结果，不影响其他通道
-                    Throwable rootCause = unwrapThrowable(throwable);
                     log.warn("检索通道失败: subQuestionIndex={}, subQuestion='{}', channel='{}', exceptionType={}, message={}",
                         subQuestionIndex,
                         subQuestion,
@@ -228,7 +241,8 @@ public class RagRetrievalEngine {
                         throwable);
                     notes.add("子问题" + subQuestionIndex + "通道[" + channel.channelName() + "]检索失败或超时，已自动降级。");
                     return new RetrievalChannelResult(channel.channelName(), List.of());
-                }))
+                });
+            })
             .toList();
         if (futures.isEmpty()) {
             notes.add("子问题" + subQuestionIndex + "没有可用的检索通道。");
@@ -259,9 +273,7 @@ public class RagRetrievalEngine {
         );
         List<Document> rerankedCandidates = applyRerank(subQuestion, parentCandidates, usedChannels);
 
-        List<Document> finalDocuments = rerankedCandidates.stream()
-            .limit(properties.getFinalTopK())
-            .toList();
+        List<Document> finalDocuments = selectFinalDocuments(rerankedCandidates);
 
         notes.add("子问题" + subQuestionIndex + "检索完成："
             + summarizeChannelResults(channelResults)
@@ -271,7 +283,7 @@ public class RagRetrievalEngine {
         if (traceRecorder != null) {
             try {
                 recordChannelObservations(traceRecorder, subQuestionIndex, subQuestion,
-                    rawChannelResults, channelResults, channelTraces);
+                    rawChannelResults, channelResults, channelTimings, finalDocuments);
                 recordRetrievalResultObservations(traceRecorder, subQuestionIndex, subQuestion,
                     rawChannelResults, channelResults, mergedCandidates, rerankedCandidates, finalDocuments);
             } catch (RuntimeException exception) {
@@ -398,13 +410,60 @@ public class RagRetrievalEngine {
     }
 
     private String candidateKey(Document document) {
-        if (properties.isDocumentLevelDedupEnabled()) {
-            Object documentId = document.getMetadata().get(DocumentKnowledgeMetadataKeys.DOCUMENT_ID);
-            if (documentId != null && StrUtil.isNotBlank(String.valueOf(documentId))) {
-                return "doc:" + documentId;
-            }
+        Object chunkId = document.getMetadata().get(DocumentKnowledgeMetadataKeys.CHUNK_ID);
+        if (chunkId != null && StrUtil.isNotBlank(String.valueOf(chunkId))) {
+            return "chunk:" + chunkId;
         }
         return StrUtil.blankToDefault(document.getId(), String.valueOf(System.identityHashCode(document)));
+    }
+
+    /**
+     * 在 Rerank 后选取最终证据。按文档去重必须放在片段融合和父块提升之后，
+     * 否则同一文档中排名稍后但真正命中问题的条款会被过早丢弃。
+     */
+    private List<Document> selectFinalDocuments(List<Document> rerankedCandidates) {
+        if (rerankedCandidates == null || rerankedCandidates.isEmpty()) {
+            return List.of();
+        }
+        int finalTopK = Math.max(properties.getFinalTopK(), 1);
+        if (!properties.isDocumentLevelDedupEnabled()) {
+            return rerankedCandidates.stream().limit(finalTopK).toList();
+        }
+
+        LinkedHashSet<String> selectedDocumentKeys = new LinkedHashSet<>();
+        List<Document> selected = new ArrayList<>(finalTopK);
+        for (Document candidate : rerankedCandidates) {
+            if (candidate == null) {
+                continue;
+            }
+            Object documentId = candidate.getMetadata().get(DocumentKnowledgeMetadataKeys.DOCUMENT_ID);
+            String documentKey = documentId == null || StrUtil.isBlank(String.valueOf(documentId))
+                ? evidenceKey(candidate)
+                : "doc:" + documentId;
+            if (selectedDocumentKeys.add(documentKey)) {
+                selected.add(candidate);
+            }
+            if (selected.size() >= finalTopK) {
+                break;
+            }
+        }
+        return selected;
+    }
+
+    /** 统一子块与提升后父块的观测标识，用于追踪原始召回是否进入最终 Prompt。 */
+    private String evidenceKey(Document document) {
+        if (document == null) {
+            return "";
+        }
+        Object parentBlockId = document.getMetadata().get(DocumentKnowledgeMetadataKeys.PARENT_BLOCK_ID);
+        if (parentBlockId != null && StrUtil.isNotBlank(String.valueOf(parentBlockId))) {
+            return "parent:" + parentBlockId;
+        }
+        Object chunkId = document.getMetadata().get(DocumentKnowledgeMetadataKeys.CHUNK_ID);
+        if (chunkId != null && StrUtil.isNotBlank(String.valueOf(chunkId))) {
+            return "chunk:" + chunkId;
+        }
+        return "id:" + StrUtil.blankToDefault(document.getId(), String.valueOf(System.identityHashCode(document)));
     }
 
     /**
@@ -528,7 +587,8 @@ public class RagRetrievalEngine {
                                            String subQuestion,
                                            List<RetrievalChannelResult> rawResults,
                                            List<RetrievalChannelResult> filteredResults,
-                                           List<SubQuestionChannelTrace> channelTraces) {
+                                           Map<String, ChannelExecutionTiming> channelTimings,
+                                           List<Document> finalDocuments) {
         if (rawResults == null || rawResults.isEmpty()) {
             return;
         }
@@ -542,9 +602,16 @@ public class RagRetrievalEngine {
                 filteredResults.stream().filter(r -> channelName.equals(r.getChannelName())).findFirst().orElse(null);
             int acceptedCount = filteredResult == null || filteredResult.getDocuments() == null ? 0 : filteredResult.getDocuments().size();
 
-            SubQuestionChannelTrace trace = channelTraces == null ? null :
-                channelTraces.stream().filter(t -> channelName.equals(t.getChannelName())).findFirst().orElse(null);
-            int finalSelectedCount = trace == null ? 0 : trace.getAcceptedCount();
+            LinkedHashSet<String> finalEvidenceKeys = finalDocuments == null
+                ? new LinkedHashSet<>()
+                : finalDocuments.stream().map(this::evidenceKey)
+                    .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+            int finalSelectedCount = rawResult.getDocuments() == null ? 0 : (int) rawResult.getDocuments().stream()
+                .map(this::evidenceKey)
+                .filter(finalEvidenceKeys::contains)
+                .distinct()
+                .count();
+            ChannelExecutionTiming timing = channelTimings == null ? null : channelTimings.get(channelName);
 
             ChannelExecutionVo execution = new ChannelExecutionVo();
             execution.setId(traceRecorder.exchangeId());
@@ -552,7 +619,13 @@ public class RagRetrievalEngine {
             execution.setSubQuestionIndex(subQuestionIndex);
             execution.setSubQuestion(subQuestion);
             execution.setChannelType(channelName);
-            execution.setExecutionState(1);
+            execution.setExecutionState(timing != null && StrUtil.isNotBlank(timing.errorMessage()) ? 3 : 2);
+            if (timing != null) {
+                execution.setStartTime(Instant.ofEpochMilli(timing.startTimeMs()));
+                execution.setEndTime(Instant.ofEpochMilli(timing.endTimeMs()));
+                execution.setDurationMs(Math.max(timing.endTimeMs() - timing.startTimeMs(), 0L));
+                execution.setErrorMessage(timing.errorMessage());
+            }
             execution.setRecalledCount(recalledCount);
             execution.setAcceptedCount(acceptedCount);
             execution.setFinalSelectedCount(finalSelectedCount);
@@ -598,9 +671,9 @@ public class RagRetrievalEngine {
         Map<String, Integer> finalRankMap = new LinkedHashMap<>();
         if (finalDocuments != null) {
             for (int i = 0; i < finalDocuments.size(); i++) {
-                String docId = finalDocuments.get(i).getId();
-                if (docId != null) {
-                    finalRankMap.put(docId, i + 1);
+                String key = evidenceKey(finalDocuments.get(i));
+                if (StrUtil.isNotBlank(key)) {
+                    finalRankMap.put(key, i + 1);
                 }
             }
         }
@@ -675,12 +748,13 @@ public class RagRetrievalEngine {
                             fr.getDocuments().stream().anyMatch(d -> Objects.equals(d.getId(), doc.getId())));
                     view.setGatePassed(passedGate);
 
-                    boolean isSelected = doc.getId() != null && finalRankMap.containsKey(doc.getId());
+                    String observationEvidenceKey = evidenceKey(doc);
+                    boolean isSelected = finalRankMap.containsKey(observationEvidenceKey);
                     view.setSelected(isSelected);
 
                     if (isSelected) {
-                        view.setFinalRank(finalRankMap.get(doc.getId()));
-                        view.setSelectionReason("已选入最终 Prompt");
+                        view.setFinalRank(finalRankMap.get(observationEvidenceKey));
+                        view.setSelectionReason("已贡献到最终 Prompt 证据");
                     } else if (!passedGate) {
 
                         Object scoreObj2 = doc.getMetadata().get(DocumentKnowledgeMetadataKeys.SCORE);
@@ -708,6 +782,10 @@ public class RagRetrievalEngine {
         }
 
         traceRecorder.recordRetrievalResults(results);
+    }
+
+    /** 单个检索通道的实际执行观测。 */
+    private record ChannelExecutionTiming(long startTimeMs, long endTimeMs, String errorMessage) {
     }
 
     /**

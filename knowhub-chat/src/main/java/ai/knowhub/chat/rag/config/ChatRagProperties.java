@@ -199,7 +199,8 @@ public class ChatRagProperties {
     private int routeDocumentTopK = 20;
 
     /**
-     * 是否在 RRF 融合后按文档去重，避免同一文档多个 chunk 占满 TopK。
+     * 是否在 Rerank 后的最终证据选择阶段按文档去重，避免同一文档多个父块占满 TopK。
+     * RRF 融合仍保留片段粒度，防止目标条款被过早丢弃。
      */
     private boolean documentLevelDedupEnabled = true;
 
@@ -353,9 +354,9 @@ public class ChatRagProperties {
         /**
          * Rerank 后保留的文档数（Top-N）。
          * rerank 模型会对所有候选文档重新打分，最终只取得分最高的前 N 个。
-         * 默认保留 5 个。
+         * 默认保留 20 个，以便在 Rerank 后再做文档级去重时仍有足够候选。
          */
-        private int topN = 5;
+        private int topN = 20;
 
         /**
          * 连接超时时间（毫秒）。

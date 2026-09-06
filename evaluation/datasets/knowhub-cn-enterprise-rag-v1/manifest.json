@@ -1,0 +1,123 @@
+[
+  {
+    "doc_id": "KH-HR-LEAVE-2026",
+    "source_type": "synthetic_policy",
+    "title": "星舟科技员工休假管理办法",
+    "path": "corpus/KH-HR-LEAVE-2026.md",
+    "version": "2.1",
+    "active": true,
+    "knowledge_scope_code": "HR",
+    "knowledge_scope_name": "人力资源",
+    "business_category": "员工制度",
+    "document_tags": "合成评测,休假,年假,病假"
+  },
+  {
+    "doc_id": "KH-FIN-TRAVEL-2026",
+    "source_type": "synthetic_policy",
+    "title": "星舟科技差旅与费用报销制度",
+    "path": "corpus/KH-FIN-TRAVEL-2026.md",
+    "version": "3.0",
+    "active": true,
+    "knowledge_scope_code": "FIN",
+    "knowledge_scope_name": "财务管理",
+    "business_category": "费用报销",
+    "document_tags": "合成评测,差旅,住宿,餐补,报销"
+  },
+  {
+    "doc_id": "KH-IT-ACCESS-2026",
+    "source_type": "synthetic_policy",
+    "title": "星舟科技信息系统账号与访问控制规范",
+    "path": "corpus/KH-IT-ACCESS-2026.md",
+    "version": "2.4",
+    "active": true,
+    "knowledge_scope_code": "IT",
+    "knowledge_scope_name": "信息技术",
+    "business_category": "身份与访问",
+    "document_tags": "合成评测,账号,权限,MFA,撤权"
+  },
+  {
+    "doc_id": "KH-SEC-INCIDENT-2026",
+    "source_type": "synthetic_policy",
+    "title": "星舟科技信息安全事件响应预案",
+    "path": "corpus/KH-SEC-INCIDENT-2026.md",
+    "version": "1.8",
+    "active": true,
+    "knowledge_scope_code": "SEC",
+    "knowledge_scope_name": "安全与合规",
+    "business_category": "事件响应",
+    "document_tags": "合成评测,安全事件,P0,P1,复盘"
+  },
+  {
+    "doc_id": "KH-PROC-VENDOR-2026",
+    "source_type": "synthetic_policy",
+    "title": "星舟科技供应商准入与采购审批办法",
+    "path": "corpus/KH-PROC-VENDOR-2026.md",
+    "version": "2.2",
+    "active": true,
+    "knowledge_scope_code": "PROC",
+    "knowledge_scope_name": "采购管理",
+    "business_category": "供应商与采购",
+    "document_tags": "合成评测,供应商,采购,比价,验收"
+  },
+  {
+    "doc_id": "KH-PRODUCT-ORBIT-3.2",
+    "source_type": "synthetic_manual",
+    "title": "星舟云盘管理员手册",
+    "path": "corpus/KH-PRODUCT-ORBIT-3.2.md",
+    "version": "3.2",
+    "active": true,
+    "knowledge_scope_code": "PRODUCT",
+    "knowledge_scope_name": "产品文档",
+    "business_category": "星舟云盘",
+    "document_tags": "合成评测,云盘,管理员,当前版本,3.2"
+  },
+  {
+    "doc_id": "KH-PRODUCT-ORBIT-3.1",
+    "source_type": "synthetic_manual",
+    "title": "星舟云盘管理员手册（历史版本）",
+    "path": "corpus/KH-PRODUCT-ORBIT-3.1.md",
+    "version": "3.1",
+    "active": false,
+    "superseded_by": "KH-PRODUCT-ORBIT-3.2",
+    "knowledge_scope_code": "PRODUCT",
+    "knowledge_scope_name": "产品文档",
+    "business_category": "星舟云盘",
+    "document_tags": "合成评测,云盘,管理员,历史版本,3.1"
+  },
+  {
+    "doc_id": "KH-OPS-BACKUP-2026",
+    "source_type": "synthetic_policy",
+    "title": "星舟科技数据备份与恢复规范",
+    "path": "corpus/KH-OPS-BACKUP-2026.md",
+    "version": "2.0",
+    "active": true,
+    "knowledge_scope_code": "OPS",
+    "knowledge_scope_name": "基础设施与运维",
+    "business_category": "备份恢复",
+    "document_tags": "合成评测,备份,RPO,RTO,恢复演练"
+  },
+  {
+    "doc_id": "KH-SALES-CONTRACT-2026",
+    "source_type": "synthetic_policy",
+    "title": "星舟科技客户合同与折扣授权规范",
+    "path": "corpus/KH-SALES-CONTRACT-2026.md",
+    "version": "1.6",
+    "active": true,
+    "knowledge_scope_code": "SALES",
+    "knowledge_scope_name": "销售管理",
+    "business_category": "合同与报价",
+    "document_tags": "合成评测,合同,折扣,法务,签署"
+  },
+  {
+    "doc_id": "KH-OFFICE-VISITOR-2026",
+    "source_type": "synthetic_policy",
+    "title": "星舟科技访客与办公区域管理规定",
+    "path": "corpus/KH-OFFICE-VISITOR-2026.md",
+    "version": "1.3",
+    "active": true,
+    "knowledge_scope_code": "OFFICE",
+    "knowledge_scope_name": "行政管理",
+    "business_category": "访客与办公区",
+    "document_tags": "合成评测,访客,门禁,机房,陪同"
+  }
+]

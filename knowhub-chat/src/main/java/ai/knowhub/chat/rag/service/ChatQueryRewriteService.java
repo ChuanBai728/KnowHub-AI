@@ -168,7 +168,7 @@ public class ChatQueryRewriteService {
             builder.topP(rewriteOptions.getTopP());
         }
         if (rewriteOptions.getThinking() != null) {
-            builder.extraBody(Map.of("thinking", rewriteOptions.getThinking()));
+            builder.extraBody(Map.of("enable_thinking", rewriteOptions.getThinking()));
         }
         return builder.build();
     }

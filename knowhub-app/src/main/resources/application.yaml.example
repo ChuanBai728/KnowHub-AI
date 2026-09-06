@@ -37,20 +37,19 @@ spring:
       auto-offset-reset: earliest
   ai:
     openai:
-      # OpenAI 兼容协议的服务入口（硅基流动）。
-      base-url: https://api.siliconflow.cn/v1
-      # 硅基流动 API Key。
-      api-key: ${SILICONFLOW_API_KEY}
+      # 百炼 OpenAI 兼容协议入口。Spring AI 会自动追加 /v1 路径。
+      base-url: https://dashscope.aliyuncs.com/compatible-mode
+      api-key: ${ALI_BAI_LIAN_API_KEY}
       chat:
         options:
-          model: Qwen/Qwen2.5-72B-Instruct
+          model: qwen3.7-flash
           temperature: 0.5
           maxTokens: 5000
       embedding:
-        base-url: https://api.siliconflow.cn/v1
-        api-key: ${SILICONFLOW_API_KEY}
+        base-url: https://dashscope.aliyuncs.com/compatible-mode
+        api-key: ${ALI_BAI_LIAN_API_KEY}
         options:
-          model: BAAI/bge-m3
+          model: text-embedding-v3
   main:
     allow-bean-definition-overriding: true
   mvc:
@@ -108,7 +107,7 @@ app:
       rewrite-history-turns: 4
       rewrite-options:
         enabled: true
-        model: Qwen/Qwen2.5-14B-Instruct
+        model: qwen3.7-flash
         temperature: 0.2
         top-p: 0.3
         thinking: false
@@ -146,10 +145,10 @@ app:
         summary-max-chars: 1400
       rerank:
         enabled: true
-        url: https://api.siliconflow.cn/v1/rerank
-        api-key: ${SILICONFLOW_API_KEY}
-        model: BAAI/bge-reranker-v2-m3
-        top-n: 5
+        url: https://dashscope.aliyuncs.com/compatible-api/v1/reranks
+        api-key: ${ALI_BAI_LIAN_API_KEY}
+        model: qwen3-rerank
+        top-n: 20
 
   tavily:
     enabled: true

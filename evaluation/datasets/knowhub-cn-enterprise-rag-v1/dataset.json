@@ -1,0 +1,25 @@
+{
+  "dataset_id": "knowhub-cn-enterprise-rag-v1",
+  "name": "KnowHub 中文企业知识库 RAG 评测集 v1",
+  "version": "1.0.0",
+  "language": "zh-CN",
+  "license": "Apache-2.0",
+  "synthetic": true,
+  "description": "面向 KnowHub AI 的自包含中文企业知识库评测集，覆盖路由、混合检索、章节结构、跨文档问答、多轮追问、澄清与拒答。所有组织、产品、制度和数值均为虚构测试数据。",
+  "document_count": 10,
+  "case_count": 68,
+  "single_turn_runner_compatible_case_count": 65,
+  "splits": {
+    "smoke": 20,
+    "regression": 30,
+    "challenge": 18
+  },
+  "supported_execution_modes": [
+    "GRAPH_ONLY",
+    "GRAPH_THEN_EVIDENCE",
+    "RETRIEVAL",
+    "REACT_AGENT",
+    "CLARIFICATION"
+  ],
+  "known_runner_gap": "现有 enterprise_rag_bench_server_eval.py 固定使用 AUTO_DOCUMENT 且不回放 conversation；KH-MEMORY-057、KH-MEMORY-058、KH-TOOL-060 需增强执行器后运行。"
+}

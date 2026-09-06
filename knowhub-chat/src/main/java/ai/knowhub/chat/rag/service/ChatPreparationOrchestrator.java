@@ -334,9 +334,12 @@ public class ChatPreparationOrchestrator {
         ConversationTraceRecorder.StageHandle routeStage = traceRecorder == null
             ? null
             : traceRecorder.startStage(ConversationTraceStageCode.ROUTE, ExecutionMode.RETRIEVAL.name(), "正在判定图查询还是混合检索。", null);
+        // 强制检索只用于批处理的自动文档路由；用户已显式选择文档时，
+        // 仍应允许章节目录、上下级等问题进入图导航。
+        boolean forceRetrieval = properties.isForceRetrievalMode() && chatMode == ChatQueryMode.AUTO_DOCUMENT;
         DocumentNavigationDecision navigationDecision;
         try {
-            if (properties.isForceRetrievalMode()) {
+            if (forceRetrieval) {
                 navigationDecision = null;
             }
             else {
@@ -345,12 +348,12 @@ public class ChatPreparationOrchestrator {
             }
             if (traceRecorder != null) {
                 traceRecorder.completeStage(routeStage, "执行路由完成。", Map.of(
-                    "executionMode", properties.isForceRetrievalMode() ? ExecutionMode.RETRIEVAL.name() : navigationDecision == null || navigationDecision.getExecutionMode() == null ? "" : navigationDecision.getExecutionMode().name(),
+                    "executionMode", forceRetrieval ? ExecutionMode.RETRIEVAL.name() : navigationDecision == null || navigationDecision.getExecutionMode() == null ? "" : navigationDecision.getExecutionMode().name(),
                     "targetSectionHint", navigationDecision == null || navigationDecision.getStructureAnchor() == null ? "" : StrUtil.blankToDefault(navigationDecision.getStructureAnchor().getTargetSectionHint(), ""),
                     "targetItemIndex", navigationDecision == null || navigationDecision.getItemAnchor() == null || navigationDecision.getItemAnchor().getItemIndex() == null
                         ? ""
                         : String.valueOf(navigationDecision.getItemAnchor().getItemIndex()),
-                    "navigationSummary", properties.isForceRetrievalMode() ? "forceRetrievalMode" : navigationDecision == null ? "" : StrUtil.blankToDefault(navigationDecision.getSummaryText(), "")
+                    "navigationSummary", forceRetrieval ? "forceRetrievalMode" : navigationDecision == null ? "" : StrUtil.blankToDefault(navigationDecision.getSummaryText(), "")
                 ));
             }
         }
@@ -362,7 +365,7 @@ public class ChatPreparationOrchestrator {
         }
 
         // 从导航决策中提取执行模式、检索问题和子问题
-        ExecutionMode executionMode = properties.isForceRetrievalMode()
+        ExecutionMode executionMode = forceRetrieval
             ? ExecutionMode.RETRIEVAL
             : navigationDecision == null || navigationDecision.getExecutionMode() == null
             ? ExecutionMode.RETRIEVAL

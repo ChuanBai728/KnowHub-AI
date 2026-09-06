@@ -55,5 +55,10 @@ knowhub-app/src/main/resources/application.yaml
 DEPLOYMENT.md
 CLAUDE.md
 AGENTS.md
-evaluation/
+evaluation/*
+!evaluation/datasets/
+!evaluation/datasets/**
+!evaluation/tools/
+evaluation/tools/*
+!evaluation/tools/enterprise_rag_bench_server_eval.py
 
