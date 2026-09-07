@@ -125,6 +125,7 @@ app:
       force-retrieval-mode: false
       route-document-top-k: 20
       document-level-dedup-enabled: true
+      max-evidence-per-document: 2
       parent-evidence-max-chars: 2200
       planning-history-max-chars: 1600
       answer-history-max-chars: 1000

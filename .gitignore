@@ -61,4 +61,5 @@ evaluation/*
 !evaluation/tools/
 evaluation/tools/*
 !evaluation/tools/enterprise_rag_bench_server_eval.py
+!evaluation/tools/test_enterprise_rag_bench_server_eval.py
 

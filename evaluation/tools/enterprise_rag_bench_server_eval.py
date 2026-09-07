@@ -477,6 +477,48 @@ def as_list(data: Any) -> list[Any]:
     return data if isinstance(data, list) else []
 
 
+def ranked_document_ids(results: list[dict[str, Any]], rank_names: tuple[str, ...],
+                        *, selected_only: bool = False,
+                        channel: str | None = None) -> list[str]:
+    """Build a document-level ranking from chunk/channel observation rows."""
+    ranked: list[tuple[float, int, str]] = []
+    for index, result in enumerate(results):
+        if selected_only and not (
+            result.get("selected") is True or str(result.get("selected")).lower() == "true"
+        ):
+            continue
+        result_channel = str(result.get("channelType") or result.get("channel_type") or "")
+        if channel is not None and result_channel != channel:
+            continue
+        doc_id = result.get("documentId") or result.get("document_id")
+        if doc_id is None:
+            continue
+        rank = None
+        for name in rank_names:
+            rank = as_float(result.get(name))
+            if rank is not None:
+                break
+        if rank is not None:
+            ranked.append((rank, index, str(doc_id)))
+    ranked.sort(key=lambda item: (item[0], item[1]))
+    return unique_in_order([doc_id for _, _, doc_id in ranked])
+
+
+def observation_completed(observation: dict[str, Any]) -> bool:
+    status = observation.get("answer_status")
+    if status is not None:
+        return str(status).upper() == "COMPLETED"
+    answer = str(observation.get("answer") or "")
+    transport_failure_markers = (
+        "connection prematurely closed",
+        "connection reset",
+        "read timed out",
+        "remote host terminated",
+    )
+    normalized = answer.lower()
+    return bool(answer.strip()) and not any(marker in normalized for marker in transport_failure_markers)
+
+
 def extract_exchange_id(events: Iterable[dict[str, Any]]) -> str | None:
     for event in events:
         for container in (event, event.get("metadata") if isinstance(event.get("metadata"), dict) else {}):
@@ -543,25 +585,47 @@ def evaluate(client: KnowHubClient, output_dir: Path, chat_timeout: int) -> None
     if observations_path.exists():
         for line in observations_path.read_text(encoding="utf-8").splitlines():
             if line.strip():
-                completed.add(json.loads(line)["question_id"])
+                existing = json.loads(line)
+                if observation_completed(existing):
+                    completed.add(existing["question_id"])
 
     with observations_path.open("a", encoding="utf-8") as handle:
         for index, question in enumerate(gold, start=1):
             if question["question_id"] in completed:
                 continue
-            conversation_id = f"erb-{uuid.uuid4()}"
             log(f"Evaluating {index}/{len(gold)} {question['question_id']}")
-            replayed_turns = replay_conversation(
-                client, question, conversation_id, official_to_runtime, chat_timeout
-            )
-            answer, events = client.stream_chat(
-                build_chat_payload(question, conversation_id, official_to_runtime),
-                timeout=chat_timeout,
-            )
-            exchange_id = extract_exchange_id(events)
-            if not exchange_id:
-                session = client.post("/api/v1/chat/session/detail", {"conversationId": conversation_id})
-                exchange_id = str(session.get("latestExchangeId") or "")
+            conversation_id = ""
+            exchange_id = ""
+            replayed_turns = 0
+            answer = ""
+            answer_status = "FAILED"
+            answer_error = ""
+            for attempt in range(1, 4):
+                conversation_id = f"erb-{uuid.uuid4()}"
+                try:
+                    replayed_turns = replay_conversation(
+                        client, question, conversation_id, official_to_runtime, chat_timeout
+                    )
+                    answer, events = client.stream_chat(
+                        build_chat_payload(question, conversation_id, official_to_runtime),
+                        timeout=chat_timeout,
+                    )
+                    exchange_id = extract_exchange_id(events) or ""
+                    session = client.post("/api/v1/chat/session/detail", {"conversationId": conversation_id})
+                    exchange_id = exchange_id or str(session.get("latestExchangeId") or "")
+                    answer_status = str(session.get("latestTurnStatus") or "UNKNOWN").upper()
+                    answer_error = str(session.get("latestTurnErrorMessage") or "")
+                except Exception as exc:  # noqa: BLE001
+                    answer_status = "FAILED"
+                    answer_error = str(exc)
+                if answer_status == "COMPLETED":
+                    break
+                log(
+                    f"{question['question_id']} attempt {attempt}/3 failed: "
+                    f"{answer_error or answer_status}"
+                )
+                if attempt < 3:
+                    time.sleep(attempt * 2)
             retrieval_results = []
             channel_executions = []
             route_trace = {}
@@ -576,17 +640,34 @@ def evaluate(client: KnowHubClient, output_dir: Path, chat_timeout: int) -> None
                 }))
                 route_trace = fetch_route_trace(client, conversation_id, exchange_id)
 
-            retrieved_runtime_ids = []
-            selected_runtime_ids = []
-            channel_runtime_ids: dict[str, list[str]] = {}
+            raw_retrieved_runtime_ids = []
+            channel_names: set[str] = set()
             for result in retrieval_results:
                 doc_id = result.get("documentId") or result.get("document_id")
                 if doc_id is not None:
-                    retrieved_runtime_ids.append(str(doc_id))
+                    raw_retrieved_runtime_ids.append(str(doc_id))
                     channel_name = str(result.get("channelType") or result.get("channel_type") or "")
-                    channel_runtime_ids.setdefault(channel_name, []).append(str(doc_id))
-                    if result.get("selected") is True or str(result.get("selected")).lower() == "true":
-                        selected_runtime_ids.append(str(doc_id))
+                    if channel_name:
+                        channel_names.add(channel_name)
+            retrieved_runtime_ids = ranked_document_ids(
+                retrieval_results, ("rrfRank", "rrf_rank")
+            )
+            if not retrieved_runtime_ids:
+                retrieved_runtime_ids = unique_in_order(raw_retrieved_runtime_ids)
+            selected_runtime_ids = ranked_document_ids(
+                retrieval_results, ("finalRank", "final_rank"), selected_only=True
+            )
+            channel_runtime_ids = {
+                channel_name: ranked_document_ids(
+                    retrieval_results,
+                    ("channelRank", "channel_rank"),
+                    channel=channel_name,
+                )
+                for channel_name in channel_names
+            }
+            raw_retrieved_official_ids = [
+                runtime_to_official.get(doc_id, doc_id) for doc_id in raw_retrieved_runtime_ids
+            ]
             retrieved_official_ids = [runtime_to_official.get(doc_id, doc_id) for doc_id in retrieved_runtime_ids]
             selected_official_ids = [runtime_to_official.get(doc_id, doc_id) for doc_id in selected_runtime_ids]
             channel_official_ids = {
@@ -611,6 +692,10 @@ def evaluate(client: KnowHubClient, output_dir: Path, chat_timeout: int) -> None
                 "conversation_id": conversation_id,
                 "exchange_id": exchange_id,
                 "answer": answer,
+                "answer_status": answer_status,
+                "answer_error": answer_error,
+                "raw_retrieved_runtime_document_ids": raw_retrieved_runtime_ids,
+                "raw_retrieved_document_ids": raw_retrieved_official_ids,
                 "retrieved_runtime_document_ids": retrieved_runtime_ids,
                 "retrieved_document_ids": retrieved_official_ids,
                 "selected_runtime_document_ids": selected_runtime_ids,
@@ -764,12 +849,21 @@ def load_admin_auth_from_yaml(path: Path) -> tuple[str | None, str | None]:
 
 def write_report(output_dir: Path) -> None:
     observations_path = output_dir / "observations.jsonl"
-    observations = [json.loads(line) for line in observations_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    observations_by_id: OrderedDict[str, dict[str, Any]] = OrderedDict()
+    for line in observations_path.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            observation = json.loads(line)
+            observations_by_id[str(observation["question_id"])] = observation
+    observations = list(observations_by_id.values())
     total = len(read_gold(output_dir))
     rows = []
     for obs in observations:
         expected = [str(item) for item in obs.get("expected_doc_ids") or []]
-        retrieved = [str(item) for item in obs.get("retrieved_document_ids") or []]
+        retrieved = unique_in_order([str(item) for item in obs.get("retrieved_document_ids") or []])
+        raw_retrieved = [
+            str(item)
+            for item in obs.get("raw_retrieved_document_ids") or obs.get("retrieved_document_ids") or []
+        ]
         unique_retrieved = unique_in_order(retrieved)
         selected = unique_in_order([str(item) for item in obs.get("selected_document_ids") or []])
         route_docs = unique_in_order([str(item) for item in obs.get("route_document_ids") or []])
@@ -817,7 +911,7 @@ def write_report(output_dir: Path) -> None:
             "keyword_recall@20": metric_recall(expected, [str(item) for item in channel_docs.get("keyword", [])], 20),
             "retrieved_count": len(retrieved),
             "unique_document_count": len(unique_retrieved),
-            "duplicate_document_ratio": duplicate_ratio(retrieved),
+            "duplicate_document_ratio": duplicate_ratio(raw_retrieved),
             "route_candidate_count": len(route_docs),
             "channel_count": len(obs.get("channel_executions") or []),
             "channel_duration_sum_ms": channel_duration_sum,
@@ -832,6 +926,9 @@ def write_report(output_dir: Path) -> None:
     metrics = {
         "completed": len(observations),
         "total": total,
+        "failed_answers": sum(
+            1 for observation in observations if not observation_completed(observation)
+        ),
         "retrieval_questions": len(retrieval_rows),
         "recall@5": mean([row["recall@5"] for row in retrieval_rows]),
         "recall@10": mean([row["recall@10"] for row in retrieval_rows]),
@@ -863,6 +960,7 @@ def write_report(output_dir: Path) -> None:
         "# EnterpriseRAG-Bench KnowHub Report",
         "",
         f"- Completed: {metrics['completed']}/{metrics['total']}",
+        f"- Failed answers: {metrics['failed_answers']}",
         f"- Retrieval-scored questions: {metrics['retrieval_questions']}",
         f"- Recall@5: {metrics['recall@5']:.4f}",
         f"- Recall@10: {metrics['recall@10']:.4f}",

@@ -93,7 +93,7 @@ public class DocumentQuestionRouter {
      * 匹配用户用引号包住的标题短语，例如"上线观察"。
      * 引号内的文本通常是要定位的章节标题。
      */
-    private static final Pattern QUOTED_TEXT_PATTERN = Pattern.compile("[“”‘’]([“”‘’]{2,40})[“”‘’]");
+    private static final Pattern QUOTED_TEXT_PATTERN = Pattern.compile("[“‘\"]([^”’\"]{2,80})[”’\"]");
 
     /**
      * 兼容 LLM 偶尔输出代码块或解释文字时，从返回文本里抽取 JSON 对象。
@@ -910,6 +910,11 @@ public class DocumentQuestionRouter {
             return byCode;
         }
 
+        GraphSection byQuotedTitle = resolveByQuotedTitle(documentId, originalQuestion, rewrittenQuestion);
+        if (byQuotedTitle != null) {
+            return byQuotedTitle;
+        }
+
         GraphSection indexedMatch = resolveByNavigationIndex(documentId, originalQuestion, rewrittenQuestion);
         if (indexedMatch != null) {
             return indexedMatch;
@@ -920,6 +925,52 @@ public class DocumentQuestionRouter {
             return localMatch;
         }
         return graphService.findBestSection(documentId, rewrittenQuestion, "");
+    }
+
+    /** 引号中的短语通常是用户明确给出的章节名，应优先于整句模糊检索。 */
+    private GraphSection resolveByQuotedTitle(Long documentId, String originalQuestion, String rewrittenQuestion) {
+        for (String text : List.of(safeText(originalQuestion), safeText(rewrittenQuestion))) {
+            Matcher matcher = QUOTED_TEXT_PATTERN.matcher(text);
+            while (matcher.find()) {
+                String title = cleanPhrase(matcher.group(1));
+                if (StrUtil.isBlank(title)) {
+                    continue;
+                }
+                GraphSection section = graphService.findSectionByTitle(documentId, title);
+                if (section != null) {
+                    return section;
+                }
+                String normalizedTitle = normalize(title);
+                if (StrUtil.isBlank(normalizedTitle)) {
+                    continue;
+                }
+                List<GraphSection> sections = graphService.listSections(documentId);
+                if (sections == null) {
+                    continue;
+                }
+                GraphSection flexibleMatch = sections.stream()
+                    .filter(candidate -> quotedTitleMatches(candidate, normalizedTitle))
+                    .min(Comparator.comparingInt(candidate -> normalize(candidate.getTitle()).length()))
+                    .orElse(null);
+                if (flexibleMatch != null) {
+                    return flexibleMatch;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** 兼容结构节点标题中保留章节编号（如“2. 账号生命周期”）的情况。 */
+    private boolean quotedTitleMatches(GraphSection section, String normalizedQuotedTitle) {
+        if (section == null) {
+            return false;
+        }
+        String title = normalize(section.getTitle());
+        String anchor = normalize(section.getAnchorText());
+        return title.equals(normalizedQuotedTitle)
+            || title.endsWith(normalizedQuotedTitle)
+            || anchor.equals(normalizedQuotedTitle)
+            || anchor.endsWith(normalizedQuotedTitle);
     }
 
     /** 通过章节编号（如 1.2）精确查找章节 */

@@ -30,8 +30,10 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
@@ -273,7 +275,7 @@ public class RagRetrievalEngine {
         );
         List<Document> rerankedCandidates = applyRerank(subQuestion, parentCandidates, usedChannels);
 
-        List<Document> finalDocuments = selectFinalDocuments(rerankedCandidates);
+        List<Document> finalDocuments = selectFinalDocuments(subQuestion, rerankedCandidates);
 
         notes.add("子问题" + subQuestionIndex + "检索完成："
             + summarizeChannelResults(channelResults)
@@ -418,10 +420,10 @@ public class RagRetrievalEngine {
     }
 
     /**
-     * 在 Rerank 后选取最终证据。按文档去重必须放在片段融合和父块提升之后，
+     * 在 Rerank 后选取最终证据。文档级多样性控制必须放在片段融合和父块提升之后，
      * 否则同一文档中排名稍后但真正命中问题的条款会被过早丢弃。
      */
-    private List<Document> selectFinalDocuments(List<Document> rerankedCandidates) {
+    private List<Document> selectFinalDocuments(String subQuestion, List<Document> rerankedCandidates) {
         if (rerankedCandidates == null || rerankedCandidates.isEmpty()) {
             return List.of();
         }
@@ -430,9 +432,15 @@ public class RagRetrievalEngine {
             return rerankedCandidates.stream().limit(finalTopK).toList();
         }
 
-        LinkedHashSet<String> selectedDocumentKeys = new LinkedHashSet<>();
+        Map<String, Integer> selectedDocumentCounts = new LinkedHashMap<>();
+        int maxEvidencePerDocument = Math.max(properties.getMaxEvidencePerDocument(), 1);
+        List<Document> selectionOrder = prioritizeComplementaryEvidence(
+            subQuestion,
+            rerankedCandidates,
+            maxEvidencePerDocument
+        );
         List<Document> selected = new ArrayList<>(finalTopK);
-        for (Document candidate : rerankedCandidates) {
+        for (Document candidate : selectionOrder) {
             if (candidate == null) {
                 continue;
             }
@@ -440,14 +448,115 @@ public class RagRetrievalEngine {
             String documentKey = documentId == null || StrUtil.isBlank(String.valueOf(documentId))
                 ? evidenceKey(candidate)
                 : "doc:" + documentId;
-            if (selectedDocumentKeys.add(documentKey)) {
-                selected.add(candidate);
+            int selectedCount = selectedDocumentCounts.getOrDefault(documentKey, 0);
+            if (selectedCount >= maxEvidencePerDocument) {
+                continue;
             }
+            selectedDocumentCounts.put(documentKey, selectedCount + 1);
+            selected.add(candidate);
             if (selected.size() >= finalTopK) {
                 break;
             }
         }
         return selected;
+    }
+
+    /**
+     * Rerank 擅长挑选主证据，但关系型问题经常需要同一文档中的另一条规则共同完成推理。
+     * 例如“深圳住宿上限”需要“住宿标准”和“深圳属于 A 类城市”两个章节。这里仅在候选章节
+     * 能补上主证据尚未覆盖的问题锚点时，将其提前到第二位，避免把文档封面等无效片段机械补入。
+     */
+    private List<Document> prioritizeComplementaryEvidence(String question,
+                                                            List<Document> candidates,
+                                                            int maxEvidencePerDocument) {
+        if (maxEvidencePerDocument < 2 || candidates.size() < 2 || StrUtil.isBlank(question)) {
+            return candidates;
+        }
+        Document primary = candidates.stream().filter(Objects::nonNull).findFirst().orElse(null);
+        if (primary == null) {
+            return candidates;
+        }
+
+        Set<String> queryAnchors = extractQueryAnchors(question);
+        if (queryAnchors.isEmpty()) {
+            return candidates;
+        }
+        Set<String> primaryCoveredAnchors = coveredAnchors(queryAnchors, primary.getText());
+        String primaryDocumentKey = documentKey(primary);
+
+        Document complement = null;
+        int bestComplementScore = 0;
+        for (Document candidate : candidates) {
+            if (candidate == null || candidate == primary || !primaryDocumentKey.equals(documentKey(candidate))) {
+                continue;
+            }
+            Set<String> candidateAnchors = coveredAnchors(queryAnchors, candidate.getText());
+            candidateAnchors.removeAll(primaryCoveredAnchors);
+            int score = candidateAnchors.stream().mapToInt(String::length).sum();
+            if (score > bestComplementScore) {
+                bestComplementScore = score;
+                complement = candidate;
+            }
+        }
+        if (complement == null) {
+            return candidates;
+        }
+
+        List<Document> reordered = new ArrayList<>(candidates.size());
+        reordered.add(primary);
+        reordered.add(complement);
+        for (Document candidate : candidates) {
+            if (candidate != primary && candidate != complement) {
+                reordered.add(candidate);
+            }
+        }
+        return reordered;
+    }
+
+    private Set<String> extractQueryAnchors(String question) {
+        LinkedHashSet<String> anchors = new LinkedHashSet<>();
+        String normalized = question.toLowerCase(Locale.ROOT);
+        StringBuilder token = new StringBuilder();
+        for (int index = 0; index <= normalized.length(); index++) {
+            char current = index < normalized.length() ? normalized.charAt(index) : ' ';
+            if (Character.isLetterOrDigit(current)) {
+                token.append(current);
+                continue;
+            }
+            addTokenAnchors(token.toString(), anchors);
+            token.setLength(0);
+        }
+        anchors.removeAll(Set.of("请问", "帮我", "一下", "什么", "怎么", "如何", "多少", "是否", "哪些", "哪个", "需要", "可以", "相关", "规定"));
+        return anchors;
+    }
+
+    private void addTokenAnchors(String token, Set<String> anchors) {
+        if (token.length() < 2) {
+            return;
+        }
+        int maxLength = Math.min(4, token.length());
+        for (int length = 2; length <= maxLength; length++) {
+            for (int start = 0; start + length <= token.length(); start++) {
+                anchors.add(token.substring(start, start + length));
+            }
+        }
+    }
+
+    private Set<String> coveredAnchors(Set<String> anchors, String text) {
+        if (StrUtil.isBlank(text)) {
+            return new LinkedHashSet<>();
+        }
+        String normalizedText = text.toLowerCase(Locale.ROOT);
+        return anchors.stream()
+            .filter(normalizedText::contains)
+            .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private String documentKey(Document document) {
+        Object documentId = document.getMetadata().get(DocumentKnowledgeMetadataKeys.DOCUMENT_ID);
+        return documentId == null || StrUtil.isBlank(String.valueOf(documentId))
+            ? evidenceKey(document)
+            : "doc:" + documentId;
     }
 
     /** 统一子块与提升后父块的观测标识，用于追踪原始召回是否进入最终 Prompt。 */
@@ -677,6 +786,9 @@ public class RagRetrievalEngine {
                 }
             }
         }
+        Map<String, Integer> rrfRankMap = rankByEvidenceKey(mergedCandidates);
+        Map<String, Document> mergedDocumentMap = documentByEvidenceKey(mergedCandidates);
+        Map<String, Document> rerankedDocumentMap = documentByEvidenceKey(rerankedCandidates);
 
         if (rawResults != null) {
             for (RetrievalChannelResult rawResult : rawResults) {
@@ -695,18 +807,26 @@ public class RagRetrievalEngine {
                     view.setSubQuestion(subQuestion);
                     view.setChannelType(channelName);
                     view.setChannelRank(i + 1);
+                    String observationEvidenceKey = evidenceKey(doc);
+                    view.setRrfRank(rrfRankMap.get(observationEvidenceKey));
 
                     Object scoreObj = doc.getMetadata().get(DocumentKnowledgeMetadataKeys.SCORE);
                     if (scoreObj instanceof Number) {
                         view.setOriginalScore(BigDecimal.valueOf(((Number) scoreObj).doubleValue()));
                     }
 
-                    Object rrfScoreObj = doc.getMetadata().get(DocumentKnowledgeMetadataKeys.RRF_SCORE);
+                    Document mergedDocument = mergedDocumentMap.get(observationEvidenceKey);
+                    Object rrfScoreObj = mergedDocument == null
+                        ? doc.getMetadata().get(DocumentKnowledgeMetadataKeys.RRF_SCORE)
+                        : mergedDocument.getMetadata().get(DocumentKnowledgeMetadataKeys.RRF_SCORE);
                     if (rrfScoreObj instanceof Number) {
                         view.setRrfScore(BigDecimal.valueOf(((Number) rrfScoreObj).doubleValue()));
                     }
 
-                    Object rerankScoreObj = doc.getMetadata().get("rerankScore");
+                    Document rerankedDocument = rerankedDocumentMap.get(observationEvidenceKey);
+                    Object rerankScoreObj = rerankedDocument == null
+                        ? doc.getMetadata().get("rerankScore")
+                        : rerankedDocument.getMetadata().get("rerankScore");
                     if (rerankScoreObj instanceof Number) {
                         view.setRerankScore(BigDecimal.valueOf(((Number) rerankScoreObj).doubleValue()));
                     }
@@ -731,6 +851,19 @@ public class RagRetrievalEngine {
                         view.setChunkNo(Integer.parseInt(String.valueOf(chunkNoObj)));
                     }
 
+                    Object parentBlockIdObj = doc.getMetadata().get(DocumentKnowledgeMetadataKeys.PARENT_BLOCK_ID);
+                    if (parentBlockIdObj != null) {
+                        view.setParentBlockId(Long.parseLong(String.valueOf(parentBlockIdObj)));
+                    }
+
+                    Document evidenceDocument = rerankedDocument == null ? mergedDocument : rerankedDocument;
+                    Object parentBlockNoObj = evidenceDocument == null ? null
+                        : evidenceDocument.getMetadata().get(DocumentKnowledgeMetadataKeys.PARENT_BLOCK_NO);
+                    if (parentBlockNoObj != null) {
+                        view.setParentBlockNo(Integer.parseInt(String.valueOf(parentBlockNoObj)));
+                    }
+                    view.setElevated(evidenceDocument != null && !Objects.equals(evidenceDocument.getId(), doc.getId()));
+
                     Object sectionPathObj = doc.getMetadata().get(DocumentKnowledgeMetadataKeys.SECTION_PATH);
                     if (sectionPathObj != null) {
                         view.setSectionPath(String.valueOf(sectionPathObj));
@@ -748,7 +881,6 @@ public class RagRetrievalEngine {
                             fr.getDocuments().stream().anyMatch(d -> Objects.equals(d.getId(), doc.getId())));
                     view.setGatePassed(passedGate);
 
-                    String observationEvidenceKey = evidenceKey(doc);
                     boolean isSelected = finalRankMap.containsKey(observationEvidenceKey);
                     view.setSelected(isSelected);
 
@@ -782,6 +914,34 @@ public class RagRetrievalEngine {
         }
 
         traceRecorder.recordRetrievalResults(results);
+    }
+
+    private Map<String, Integer> rankByEvidenceKey(List<Document> documents) {
+        Map<String, Integer> ranks = new LinkedHashMap<>();
+        if (documents == null) {
+            return ranks;
+        }
+        for (int index = 0; index < documents.size(); index++) {
+            String key = evidenceKey(documents.get(index));
+            if (StrUtil.isNotBlank(key)) {
+                ranks.putIfAbsent(key, index + 1);
+            }
+        }
+        return ranks;
+    }
+
+    private Map<String, Document> documentByEvidenceKey(List<Document> documents) {
+        Map<String, Document> indexed = new LinkedHashMap<>();
+        if (documents == null) {
+            return indexed;
+        }
+        for (Document document : documents) {
+            String key = evidenceKey(document);
+            if (StrUtil.isNotBlank(key)) {
+                indexed.putIfAbsent(key, document);
+            }
+        }
+        return indexed;
     }
 
     /** 单个检索通道的实际执行观测。 */

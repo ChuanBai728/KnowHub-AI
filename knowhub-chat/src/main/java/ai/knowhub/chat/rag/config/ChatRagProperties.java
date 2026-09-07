@@ -199,10 +199,16 @@ public class ChatRagProperties {
     private int routeDocumentTopK = 20;
 
     /**
-     * 是否在 Rerank 后的最终证据选择阶段按文档去重，避免同一文档多个父块占满 TopK。
+     * 是否在 Rerank 后的最终证据选择阶段限制单文档证据数量，避免同一文档占满 TopK。
      * RRF 融合仍保留片段粒度，防止目标条款被过早丢弃。
      */
     private boolean documentLevelDedupEnabled = true;
+
+    /**
+     * 开启文档级多样性控制后，每份文档最多进入最终 Prompt 的父块数。
+     * 保留两个块可覆盖“分类表 + 标准表”这类同文档多证据问题。
+     */
+    private int maxEvidencePerDocument = 2;
 
     /**
      * 无证据时的兜底回复话术。

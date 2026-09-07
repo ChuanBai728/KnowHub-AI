@@ -75,13 +75,14 @@ class RagRetrievalEngineTest {
             Document targetParent = findByChunkId(candidates, 102L);
             Document distractorParent = findByChunkId(candidates, 101L);
             Document otherParent = findByChunkId(candidates, 201L);
+            targetParent.getMetadata().put("rerankScore", 0.99D);
             return List.of(targetParent, otherParent, distractorParent);
         });
 
         ChatRagProperties properties = new ChatRagProperties();
         properties.setCandidateTopK(20);
         properties.setPreRerankTopK(20);
-        properties.setFinalTopK(2);
+        properties.setFinalTopK(3);
         properties.setMinVectorSimilarity(0.0);
         properties.setRerankEnabled(true);
         properties.setDocumentLevelDedupEnabled(true);
@@ -104,7 +105,7 @@ class RagRetrievalEngineTest {
         assertThat(evidence.getFusedCandidateCount()).isEqualTo(3);
         assertThat(evidence.getDocuments())
             .extracting(document -> document.getMetadata().get(DocumentKnowledgeMetadataKeys.CHUNK_ID))
-            .containsExactly(102L, 201L);
+            .containsExactly(102L, 201L, 101L);
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<RetrievalResultVo>> resultCaptor = ArgumentCaptor.forClass(List.class);
@@ -115,6 +116,10 @@ class RagRetrievalEngineTest {
             .orElseThrow();
         assertThat(targetObservation.isSelected()).isTrue();
         assertThat(targetObservation.getFinalRank()).isEqualTo(1);
+        assertThat(targetObservation.getRrfRank()).isEqualTo(2);
+        assertThat(targetObservation.getRerankScore()).isEqualByComparingTo("0.99");
+        assertThat(targetObservation.getParentBlockId()).isEqualTo(1002L);
+        assertThat(targetObservation.isElevated()).isTrue();
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<ChannelExecutionVo>> channelCaptor = ArgumentCaptor.forClass(List.class);
@@ -124,7 +129,58 @@ class RagRetrievalEngineTest {
         assertThat(execution.getStartTime()).isNotNull();
         assertThat(execution.getEndTime()).isNotNull();
         assertThat(execution.getDurationMs()).isNotNull().isGreaterThanOrEqualTo(0L);
-        assertThat(execution.getFinalSelectedCount()).isEqualTo(2);
+        assertThat(execution.getFinalSelectedCount()).isEqualTo(3);
+    }
+
+    @Test
+    void promotesSameDocumentEvidenceThatAddsAnUncoveredQuestionAnchor() {
+        Document lodging = childDocument(101L, 1001L, 1L,
+            "住宿费含税上限：A类城市650元，B类城市480元", 0.95);
+        Document cover = childDocument(102L, 1002L, 1L,
+            "差旅制度，版本3.0，责任部门财务部", 0.90);
+        Document unrelatedA = childDocument(201L, 2001L, 2L, "采购审批规则", 0.85);
+        Document unrelatedB = childDocument(301L, 3001L, 3L, "合同付款规则", 0.80);
+        Document unrelatedC = childDocument(401L, 4001L, 4L, "访客登记规则", 0.75);
+        Document cityClass = childDocument(103L, 1003L, 1L,
+            "城市分级：A类城市包括北京、上海、广州、深圳", 0.70);
+
+        RetrievalChannel vector = mock(RetrievalChannel.class);
+        when(vector.channelName()).thenReturn("vector");
+        when(vector.supports(any(ConversationExecutionPlan.class))).thenReturn(true);
+        when(vector.retrieve(any(String.class), any(ConversationExecutionPlan.class)))
+            .thenReturn(new RetrievalChannelResult("vector",
+                List.of(lodging, cover, unrelatedA, unrelatedB, unrelatedC, cityClass)));
+
+        DocumentKnowledgeService knowledgeService = mock(DocumentKnowledgeService.class);
+        when(knowledgeService.elevateToParentBlocks(anyList(), anyInt()))
+            .thenAnswer(invocation -> invocation.getArgument(0));
+
+        HttpDocumentRerankPostProcessor reranker = mock(HttpDocumentRerankPostProcessor.class);
+        when(reranker.process(any(Query.class), anyList())).thenReturn(
+            List.of(lodging, cover, unrelatedA, unrelatedB, unrelatedC, cityClass)
+        );
+
+        ChatRagProperties properties = new ChatRagProperties();
+        properties.setFinalTopK(5);
+        properties.setMinVectorSimilarity(0.0);
+        properties.setRerankEnabled(true);
+        properties.setDocumentLevelDedupEnabled(true);
+        properties.setMaxEvidencePerDocument(2);
+
+        RagRetrievalEngine engine = new RagRetrievalEngine(
+            List.of(vector), properties, reranker, knowledgeService, executorService
+        );
+        ConversationExecutionPlan plan = ConversationExecutionPlan.builder()
+            .retrievalQuestion("到深圳出差，住宿费含税上限是多少？")
+            .retrievalSubQuestions(List.of("到深圳出差，住宿费含税上限是多少？"))
+            .build();
+
+        List<Document> selected = engine.retrieve(plan, null)
+            .getSubQuestionEvidenceList().get(0).getDocuments();
+
+        assertThat(selected)
+            .extracting(document -> document.getMetadata().get(DocumentKnowledgeMetadataKeys.CHUNK_ID))
+            .containsExactly(101L, 103L, 201L, 301L, 401L);
     }
 
     private static Document childDocument(long chunkId, long parentBlockId, long documentId,
