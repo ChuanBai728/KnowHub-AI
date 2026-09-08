@@ -91,7 +91,16 @@
           <div class="empty-icon">
             <SparklesIcon class="icon" />
           </div>
-          <h3>让零散问题更快落成可执行方案</h3>
+          <div class="brand-line">
+            <h3>KnowHub AI</h3>
+            <a class="github-link" href="https://github.com/ChuanBai728/KnowHub-AI" target="_blank" rel="noopener noreferrer">
+              <svg class="github-icon" viewBox="0 0 16 16" width="18" height="18" fill="currentColor">
+                <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+              </svg>
+              GitHub
+            </a>
+          </div>
+          <p>让零散问题更快落成可执行方案</p>
           <p>结合业务问答、文档理解与知识检索，把想法整理成清晰结论和下一步动作</p>
           <div class="prompt-grid">
             <button type="button" class="prompt-chip" @click="sendMessage('请先介绍一下你能帮我做哪些事情，并给出几个典型使用场景')">
@@ -1038,13 +1047,45 @@ onMounted(async () => {
 
 .empty-state h3 {
   max-width: 680px;
-  margin: 16px 0 10px;
+  margin: 0;
   font-family: var(--font-display);
   font-size: 26px;
   line-height: 1.3;
   font-weight: 700;
   color: var(--color-text-strong);
   font-optical-sizing: auto;
+}
+
+.brand-line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin: 16px 0 10px;
+}
+
+.github-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-muted-strong);
+  text-decoration: none;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.github-link:hover {
+  color: var(--color-text-strong);
+  border-color: var(--color-text-strong);
+  background: var(--color-surface-hover, rgba(0,0,0,0.03));
+}
+
+.github-icon {
+  flex-shrink: 0;
 }
 
 .empty-state p {
