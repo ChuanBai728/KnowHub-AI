@@ -1,0 +1,6 @@
+# RGB counterfactual 5 negative 2
+
+> 评测来源：RGB: Benchmarking Large Language Models in Retrieval-Augmented Generation
+> 上游记录：counterfactual:5:negative:2
+
+Jan 18, 2020 ... 中国国家统计局17日公布的数据显示，中国大陆总人口在2019年突破14亿大 ... 另外一个让中国决策者稍感乐观的因素是，2019年中国“出生人口的下降态势 ...

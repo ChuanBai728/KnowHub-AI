@@ -1,0 +1,6 @@
+# RGB counterfactual 8 negative 1
+
+> 评测来源：RGB: Benchmarking Large Language Models in Retrieval-Augmented Generation
+> 上游记录：counterfactual:8:negative:1
+
+Jan 18, 2020 ... 中国经济增长连续18个季度保持在6%—7%之间，经济发展的韧性持续显现。这不仅表明2019年全面建成小康社会在经济总量上取得了新的进展，也表明2019年 ...

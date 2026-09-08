@@ -1,0 +1,6 @@
+# RGB counterfactual 6 negative 1
+
+> 评测来源：RGB: Benchmarking Large Language Models in Retrieval-Augmented Generation
+> 上游记录：counterfactual:6:negative:1
+
+Jan 20, 2019 ... 路透北京1月21日- 尽管中国放开生育二胎政策，却未能遏止人口出生率下降的趋势。根据中国国家统计局周一发布2018年数据显示，2018年人口出生率大幅降 ...

@@ -1,0 +1,6 @@
+# RGB counterfactual 4 negative 2
+
+> 评测来源：RGB: Benchmarking Large Language Models in Retrieval-Augmented Generation
+> 上游记录：counterfactual:4:negative:2
+
+Mar 6, 2015 ... 虽然联赛开始后他们将不得不双线作战，但由于纸面实力都不俗，4支球队都是新赛季中超冠军的有力争夺者。 提到争冠，不得不提的是上海上港，在埃里克森 ...

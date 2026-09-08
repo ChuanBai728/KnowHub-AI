@@ -1,0 +1,42 @@
+{
+  "generated_at": "deterministic-build; timestamp intentionally omitted",
+  "selection_policy": {
+    "t2retrieval": "first 150 non-empty queries that have qrels; at most first 2 positive qrels per query",
+    "cmrc2018": "25 evenly-spaced eligible dev paragraphs; first 2 questions per paragraph",
+    "rgb": "20 noise + 10 negative-only rejection + 10 integration + 10 counterfactual",
+    "technical_docs": "50 curated candidates from pinned official Chinese docs; human review pending"
+  },
+  "sources": [
+    {
+      "name": "T2Retrieval",
+      "revision": "921dd3af6e78d1ae7ee0368aa8d7eaee02c8f08e",
+      "license": "Apache-2.0",
+      "url": "https://huggingface.co/datasets/mteb/T2Retrieval"
+    },
+    {
+      "name": "CMRC 2018",
+      "revision": "c0eb1b6ba219847457e6af3180da722bbeb656af",
+      "license": "CC-BY-SA-4.0",
+      "url": "https://github.com/ymcui/cmrc2018"
+    },
+    {
+      "name": "RGB",
+      "revision": "65ec39e40e7dc9abb50e9bf1b4f32be3f6f16615",
+      "license": "CC-BY-NC-SA-4.0",
+      "url": "https://github.com/chen700564/RGB",
+      "restriction": "non-commercial use only"
+    },
+    {
+      "name": "Kubernetes Chinese documentation",
+      "revision": "3203edad9a1f98f4fd5a36c03512d9c73546c4e6",
+      "license": "CC-BY-4.0",
+      "url": "https://github.com/kubernetes/website"
+    },
+    {
+      "name": "Apache Dubbo Chinese documentation",
+      "revision": "84b35ebdab20a54da2c740aa8428a375ff43b481",
+      "license": "Apache-2.0",
+      "url": "https://github.com/apache/dubbo-website"
+    }
+  ]
+}

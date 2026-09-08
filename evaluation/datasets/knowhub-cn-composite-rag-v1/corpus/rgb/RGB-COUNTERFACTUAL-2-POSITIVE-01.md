@@ -1,0 +1,6 @@
+# RGB counterfactual 2 positive 1
+
+> 评测来源：RGB: Benchmarking Large Language Models in Retrieval-Augmented Generation
+> 上游记录：counterfactual:2:positive:1
+
+这是中华人民共和国首次举办世界军人运动会，共计109个国家9308名军人报名参加，竞赛项目分27个大项、329个小项。 2019年世界军人运动会. 主办城市, 中国湖北省武汉 ...

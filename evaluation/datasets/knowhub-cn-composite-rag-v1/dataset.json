@@ -1,0 +1,40 @@
+{
+  "dataset_id": "knowhub-cn-composite-rag-v1",
+  "name": "KnowHub 中文复合 RAG 正式评测集 v1",
+  "version": "1.0.0-rc1",
+  "language": "zh-CN",
+  "license": "mixed; see sources.json and THIRD_PARTY_NOTICES.md",
+  "commercial_use": false,
+  "description": "由 T2Retrieval、CMRC 2018、RGB 与 Kubernetes/Apache Dubbo 中文文档构成的 300 题小型复合评测集。",
+  "document_count": 554,
+  "case_count": 300,
+  "component_counts": {
+    "cmrc2018": 50,
+    "rgb": 50,
+    "t2retrieval": 150,
+    "technical_docs": 50
+  },
+  "question_type_counts": {
+    "answer_rejection": 10,
+    "clarification": 7,
+    "counterfactual_robustness": 10,
+    "extractive_qa": 50,
+    "fact_qa": 12,
+    "information_integration": 10,
+    "multi_turn_followup": 10,
+    "noise_robustness": 20,
+    "procedural_qa": 11,
+    "retrieval": 150,
+    "section_navigation": 10
+  },
+  "manual_review": {
+    "required": 50,
+    "pending": 50
+  },
+  "supported_execution_modes": [
+    "GRAPH_ONLY",
+    "GRAPH_THEN_EVIDENCE",
+    "RETRIEVAL",
+    "CLARIFICATION"
+  ]
+}

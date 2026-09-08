@@ -1,0 +1,16 @@
+{
+  "valid": true,
+  "errors": [],
+  "warnings": [
+    "50 technical-doc cases still require human review"
+  ],
+  "case_count": 300,
+  "document_count": 554,
+  "component_counts": {
+    "cmrc2018": 50,
+    "rgb": 50,
+    "t2retrieval": 150,
+    "technical_docs": 50
+  },
+  "pending_human_review": 50
+}

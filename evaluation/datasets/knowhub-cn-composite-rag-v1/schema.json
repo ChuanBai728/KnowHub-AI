@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "KnowHub Chinese Composite RAG Gold Case v1",
+  "type": "object",
+  "required": [
+    "question_id",
+    "split",
+    "component",
+    "source_record_id",
+    "question_type",
+    "difficulty",
+    "question",
+    "expected_doc_ids",
+    "gold_answer",
+    "answer_facts",
+    "gold_evidence",
+    "allowed_execution_modes",
+    "should_abstain",
+    "should_clarify",
+    "citation_required",
+    "review"
+  ],
+  "properties": {
+    "question_id": {
+      "type": "string",
+      "pattern": "^CMP-(T2|CMRC|RGB|DOC)-[0-9]{3}$"
+    },
+    "split": {"const": "formal"},
+    "component": {
+      "enum": ["t2retrieval", "cmrc2018", "rgb", "technical_docs"]
+    },
+    "source_record_id": {"type": "string", "minLength": 1},
+    "question_type": {"type": "string", "minLength": 1},
+    "difficulty": {"enum": ["easy", "medium", "hard"]},
+    "source_types": {"type": "array", "items": {"type": "string"}},
+    "question": {"type": "string", "minLength": 2},
+    "conversation": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["role", "content"],
+        "properties": {
+          "role": {"enum": ["user", "assistant"]},
+          "content": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": false
+      }
+    },
+    "chat_mode": {"enum": ["DOCUMENT", "AUTO_DOCUMENT", "OPEN_CHAT"]},
+    "selected_document_key": {"type": ["string", "null"]},
+    "expected_doc_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "gold_answer": {"type": "string"},
+    "answer_facts": {"type": "array", "items": {"type": "string"}},
+    "gold_evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["doc_id", "section_path", "text_anchor", "required"],
+        "properties": {
+          "doc_id": {"type": "string"},
+          "section_path": {"type": "string"},
+          "text_anchor": {"type": "string"},
+          "required": {"type": "boolean"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "allowed_execution_modes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"enum": ["GRAPH_ONLY", "GRAPH_THEN_EVIDENCE", "RETRIEVAL", "CLARIFICATION"]}
+    },
+    "should_abstain": {"type": "boolean"},
+    "should_clarify": {"type": "boolean"},
+    "citation_required": {"type": "boolean"},
+    "forbidden_claims": {"type": "array", "items": {"type": "string"}},
+    "tags": {"type": "array", "items": {"type": "string"}},
+    "review": {
+      "type": "object",
+      "required": ["manual_review_required", "status", "reviewer", "notes", "reviewed_at"],
+      "properties": {
+        "manual_review_required": {"type": "boolean"},
+        "status": {"enum": ["auto_converted", "pending_human_review", "approved", "rejected"]},
+        "reviewer": {"type": ["string", "null"]},
+        "notes": {"type": "string"},
+        "reviewed_at": {"type": ["string", "null"]}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}

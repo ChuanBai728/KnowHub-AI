@@ -1,0 +1,6 @@
+# RGB counterfactual 3 negative 1
+
+> 评测来源：RGB: Benchmarking Large Language Models in Retrieval-Augmented Generation
+> 上游记录：counterfactual:3:negative:1
+
+Dec 22, 2020 ... 11月12日，2020赛季中超联赛落下帷幕。 ... 恒大若能以今年双线失败的教训为警钟，做出相应调整，下赛季依然会是中超冠军最有力的争夺者。 2020年11 ...

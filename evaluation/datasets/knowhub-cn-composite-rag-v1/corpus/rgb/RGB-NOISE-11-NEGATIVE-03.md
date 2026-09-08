@@ -1,0 +1,6 @@
+# RGB noise 11 negative 3
+
+> 评测来源：RGB: Benchmarking Large Language Models in Retrieval-Augmented Generation
+> 上游记录：noise:11:negative:3
+
+本届世界人工智能大会期间，亿欧将同步举办世界人工智能大会“AI商业落地论坛”“AI医疗发展论坛”“AI与新一代车载智能传感器技术创新论坛”“第十届中国产业互联网高峰论坛”等分论坛。 同时，亿欧将重磅发布《2023中国AI商业落地投资价值报告》《2023中国AIGC商业潜力研究报告》《2023AI医学影像产品生命周期研究报告》等多份研究报告，在媒体传播、榜单发布等多方面，全程助力大会成功举办。

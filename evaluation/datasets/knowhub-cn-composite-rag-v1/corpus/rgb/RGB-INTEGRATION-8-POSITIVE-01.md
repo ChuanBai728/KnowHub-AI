@@ -1,0 +1,6 @@
+# RGB integration 8 positive 1
+
+> 评测来源：RGB: Benchmarking Large Language Models in Retrieval-Augmented Generation
+> 上游记录：integration:8:positive:1
+
+Mar 14, 2022 ... 特别是在去冬今春冬供期间，塔里木油田天然气日产量连攀新高，保持在1亿 ... 亿立方米大气区。2021年，油气产量当量达到3182万吨，其中天然气产量319 ...

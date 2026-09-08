@@ -1,0 +1,6 @@
+# RGB counterfactual 6 negative 2
+
+> 评测来源：RGB: Benchmarking Large Language Models in Retrieval-Augmented Generation
+> 上游记录：counterfactual:6:negative:2
+
+Jan 18, 2020 ... 另外一个让中国决策者稍感乐观的因素是，2019年中国“出生人口的下降态势得到缓解”，因为2019年全年出生人口较2018年只减少了58万，而2018年全年出生 ...

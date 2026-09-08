@@ -1,0 +1,6 @@
+# RGB counterfactual 7 counterfactual 1
+
+> 评测来源：RGB: Benchmarking Large Language Models in Retrieval-Augmented Generation
+> 上游记录：counterfactual:7:counterfactual:1
+
+Jan 18, 2021 ... 国家统计局18日发布数据，初步核算，2020年，我国国内生产总值（GDP）1015986亿元，按可比价格计算，比上年增长12.3%。分季度看，一季度同比下降6.8%， ...
