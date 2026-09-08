@@ -30,7 +30,8 @@ api_metadata:
 feature:
   title: Automated rollouts and rollbacks
   description: >
-    Kubernetes progressively rolls out changes to your application or its configuration, while monitoring application health to ensure it doesn't kill all your instances at the same time. If something goes wrong, Kubernetes will rollback the change for you. Take advantage of a growing ecosystem of deployment solutions.
+    Kubernetes progressively rolls out changes to your application or its configuration, while monitoring application health to ensure it doesn't kill all your
+instances at the same time. If something goes wrong, Kubernetes will rollback the change for you. Take advantage of a growing ecosystem of deployment solutions.
 description: >-
   A Deployment manages a set of Pods to run an application workload, usually one that doesn't maintain state.
 content_type: concept
@@ -49,7 +50,9 @@ A _Deployment_ provides declarative updates for {{< glossary_tooltip text="Pods"
 提供声明式的更新能力。
 
 <!--
-You describe a _desired state_ in a Deployment, and the Deployment {{< glossary_tooltip term_id="controller" >}} changes the actual state to the desired state at a controlled rate. You can define Deployments to create new ReplicaSets, or to remove existing Deployments and adopt all their resources with new Deployments.
+You describe a _desired state_ in a Deployment, and the Deployment {{< glossary_tooltip term_id="controller" >}} changes the actual state to the desired state
+at a controlled rate. You can define Deployments to create new ReplicaSets, or to remove existing Deployments and adopt all their resources with new
+Deployments.
 -->
 你负责描述 Deployment 中的**目标状态**，而 Deployment {{< glossary_tooltip term_id="controller" >}}
 以受控速率更改实际状态，
@@ -76,8 +79,11 @@ The following are typical use cases for Deployments:
 以下是 Deployment 的典型用例：
 
 <!--
-* [Create a Deployment to rollout a ReplicaSet](#creating-a-deployment). The ReplicaSet creates Pods in the background. Check the status of the rollout to see if it succeeds or not.
-* [Declare the new state of the Pods](#updating-a-deployment) by updating the PodTemplateSpec of the Deployment. A new ReplicaSet is created, and the Deployment gradually scales it up while scaling down the old ReplicaSet, ensuring Pods are replaced at a controlled rate. Each new ReplicaSet updates the revision of the Deployment.
+* [Create a Deployment to rollout a ReplicaSet](#creating-a-deployment). The ReplicaSet creates Pods in the background. Check the status of the rollout to see
+if it succeeds or not.
+* [Declare the new state of the Pods](#updating-a-deployment) by updating the PodTemplateSpec of the Deployment. A new ReplicaSet is created, and the Deployment
+gradually scales it up while scaling down the old ReplicaSet, ensuring Pods are replaced at a controlled rate. Each new ReplicaSet updates the revision of the
+Deployment.
 -->
 * [创建 Deployment 以将 ReplicaSet 上线](#creating-a-deployment)。ReplicaSet 在后台创建 Pod。
   检查 ReplicaSet 的上线状态，查看其是否成功。
@@ -86,9 +92,11 @@ The following are typical use cases for Deployments:
   而减少旧的 ReplicaSet 的规模，确保以受控速率替换 Pod。
   每个新的 ReplicaSet 都会更新 Deployment 的修订版本。
 <!--
-* [Rollback to an earlier Deployment revision](#rolling-back-a-deployment) if the current state of the Deployment is not stable. Each rollback updates the revision of the Deployment.
+* [Rollback to an earlier Deployment revision](#rolling-back-a-deployment) if the current state of the Deployment is not stable. Each rollback updates the
+revision of the Deployment.
 * [Scale up the Deployment to facilitate more load](#scaling-a-deployment).
-* [Pause the rollout of a Deployment](#pausing-and-resuming-a-deployment) to apply multiple fixes to its PodTemplateSpec and then resume it to start a new rollout.
+* [Pause the rollout of a Deployment](#pausing-and-resuming-a-deployment) to apply multiple fixes to its PodTemplateSpec and then resume it to start a new
+rollout.
 * [Use the status of the Deployment](#deployment-status) as an indicator that a rollout has stuck.
 * [Clean up older ReplicaSets](#clean-up-policy) that you don't need anymore.
 -->
@@ -304,7 +312,8 @@ Follow the steps given below to create the above Deployment:
 You must specify an appropriate selector and Pod template labels in a Deployment
 (in this case, `app: nginx`).
 
-Do not overlap labels or selectors with other controllers (including other Deployments and StatefulSets). Kubernetes doesn't stop you from overlapping, and if multiple controllers have overlapping selectors those controllers might conflict and behave unexpectedly.
+Do not overlap labels or selectors with other controllers (including other Deployments and StatefulSets). Kubernetes doesn't stop you from overlapping, and if
+multiple controllers have overlapping selectors those controllers might conflict and behave unexpectedly.
 -->
 你必须在 Deployment 中指定适当的选择算符和 Pod 模板标签（在本例中为 `app: nginx`）。
 
@@ -332,7 +341,8 @@ Deployment 控制器将 `pod-template-hash` 标签添加到 Deployment
 所创建或收留的每个 ReplicaSet。
 
 <!--
-This label ensures that child ReplicaSets of a Deployment do not overlap. It is generated by hashing the `PodTemplate` of the ReplicaSet and using the resulting hash as the label value that is added to the ReplicaSet selector, Pod template labels,
+This label ensures that child ReplicaSets of a Deployment do not overlap. It is generated by hashing the `PodTemplate` of the ReplicaSet and using the resulting
+hash as the label value that is added to the ReplicaSet selector, Pod template labels,
 and in any existing Pods that the ReplicaSet might have.
 -->
 此标签可确保 Deployment 的子 ReplicaSet 不重叠。
@@ -678,7 +688,8 @@ Deployment 的标签选择算符在创建后**不可更改**；
 
 <!--
 * **Additions:** When you create a new Deployment with a narrower selector, the new Deployment **must** also have a suitable Pod template.
-  If you have an existing manifest and you edit the manifest to narrow the selector, you need to edit the metadata of the Pod template inside that Deployment, adding the
+  If you have an existing manifest and you edit the manifest to narrow the selector, you need to edit the metadata of the Pod template inside that Deployment,
+adding the
   new labels
   to match, as otherwise the API server returns a validation error. This is a _non-overlapping_ change:
   the new Deployment will not "see" the old Pods (which lack the new label), causing the old
@@ -829,7 +840,8 @@ Deployment 被触发上线时，系统就会创建 Deployment 的新的修订版
 
   {{< note >}}
   <!--
-  The Deployment controller stops the bad rollout automatically, and stops scaling up the new ReplicaSet. This depends on the rollingUpdate parameters (`maxUnavailable` specifically) that you have specified. Kubernetes by default sets the value to 25%.
+  The Deployment controller stops the bad rollout automatically, and stops scaling up the new ReplicaSet. This depends on the rollingUpdate parameters
+(`maxUnavailable` specifically) that you have specified. Kubernetes by default sets the value to 25%.
   -->
   Deployment 控制器自动停止有问题的上线过程，并停止对新的 ReplicaSet 扩容。
   这行为取决于所指定的 rollingUpdate 参数（具体为 `maxUnavailable`）。
@@ -882,11 +894,14 @@ Deployment 被触发上线时，系统就会创建 Deployment 的新的修订版
     --------- --------    -----   ----                    -------------   --------    ------              -------
     1m        1m          1       {deployment-controller }                Normal      ScalingReplicaSet   Scaled up replica set nginx-deployment-2035384211 to 3
     22s       22s         1       {deployment-controller }                Normal      ScalingReplicaSet   Scaled up replica set nginx-deployment-1564180365 to 1
-    22s       22s         1       {deployment-controller }                Normal      ScalingReplicaSet   Scaled down replica set nginx-deployment-2035384211 to 2
+    22s       22s         1       {deployment-controller }                Normal      ScalingReplicaSet   Scaled down replica set nginx-deployment-2035384211 to
+2
     22s       22s         1       {deployment-controller }                Normal      ScalingReplicaSet   Scaled up replica set nginx-deployment-1564180365 to 2
-    21s       21s         1       {deployment-controller }                Normal      ScalingReplicaSet   Scaled down replica set nginx-deployment-2035384211 to 1
+    21s       21s         1       {deployment-controller }                Normal      ScalingReplicaSet   Scaled down replica set nginx-deployment-2035384211 to
+1
     21s       21s         1       {deployment-controller }                Normal      ScalingReplicaSet   Scaled up replica set nginx-deployment-1564180365 to 3
-    13s       13s         1       {deployment-controller }                Normal      ScalingReplicaSet   Scaled down replica set nginx-deployment-2035384211 to 0
+    13s       13s         1       {deployment-controller }                Normal      ScalingReplicaSet   Scaled down replica set nginx-deployment-2035384211 to
+0
     13s       13s         1       {deployment-controller }                Normal      ScalingReplicaSet   Scaled up replica set nginx-deployment-3066724191 to 1
   ```
 
@@ -927,7 +942,8 @@ Follow the steps given below to check the rollout history:
    ```
 
    <!--
-   `CHANGE-CAUSE` is copied from the Deployment annotation `kubernetes.io/change-cause` to its revisions upon creation. You can specify the`CHANGE-CAUSE` message by:
+   `CHANGE-CAUSE` is copied from the Deployment annotation `kubernetes.io/change-cause` to its revisions upon creation. You can specify the`CHANGE-CAUSE`
+message by:
    -->
    `CHANGE-CAUSE` 的内容是从 Deployment 的 `kubernetes.io/change-cause` 注解复制过来的。
    复制动作发生在修订版本创建时。你可以通过以下方式设置 `CHANGE-CAUSE` 消息：
@@ -944,7 +960,8 @@ Follow the steps given below to check the rollout history:
 
    {{< note >}}
    <!--
-   In older versions of Kubernetes, you could use the `--record` flag with kubectl commands to automatically populate the `CHANGE-CAUSE` field. This flag is deprecated and will be removed in a future release.
+   In older versions of Kubernetes, you could use the `--record` flag with kubectl commands to automatically populate the `CHANGE-CAUSE` field. This flag is
+deprecated and will be removed in a future release.
    -->
    在 Kubernetes 旧版本中，可以使用 kubectl 命令的 `--record` 标志自动填充 `CHANGE-CAUSE` 字段。
    此标志已弃用，并将在未来的版本中移除。
@@ -1728,7 +1745,8 @@ Also, the deadline is not taken into account anymore once the Deployment rollout
 一旦 Deployment 上线完成，就不再考虑其期限。
 
 <!--
-See the [Kubernetes API conventions](https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties) for more information on status conditions.
+See the [Kubernetes API conventions](https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties) for more
+information on status conditions.
 -->
 参考
 [Kubernetes API Conventions](https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties)
@@ -2009,7 +2027,8 @@ The `.spec.template` and `.spec.selector` are the only required fields of the `.
 `.spec` 中只有 `.spec.template` 和 `.spec.selector` 是必需的字段。
 
 <!--
-The `.spec.template` is a [Pod template](/docs/concepts/workloads/pods/#pod-templates). It has exactly the same schema as a {{< glossary_tooltip text="Pod" term_id="pod" >}}, except it is nested and does not have an `apiVersion` or `kind`.
+The `.spec.template` is a [Pod template](/docs/concepts/workloads/pods/#pod-templates). It has exactly the same schema as a {{< glossary_tooltip text="Pod"
+term_id="pod" >}}, except it is nested and does not have an `apiVersion` or `kind`.
 -->
 `.spec.template` 是一个 [Pod 模板](/zh-cn/docs/concepts/workloads/pods/#pod-templates)。
 它和 {{< glossary_tooltip text="Pod" term_id="pod" >}} 的语法规则完全相同。
@@ -2082,7 +2101,8 @@ for the Pods targeted by this Deployment.
 `.spec.selector` 必须匹配 `.spec.template.metadata.labels`，否则请求会被 API 拒绝。
 
 <!--
-In API version `apps/v1`, `.spec.selector` and `.metadata.labels` do not default to `.spec.template.metadata.labels` if not set. So they must be set explicitly. Also note that `.spec.selector` is immutable after creation of the Deployment in `apps/v1`.
+In API version `apps/v1`, `.spec.selector` and `.metadata.labels` do not default to `.spec.template.metadata.labels` if not set. So they must be set explicitly.
+Also note that `.spec.selector` is immutable after creation of the Deployment in `apps/v1`.
 -->
 在 API `apps/v1`版本中，`.spec.selector` 和 `.metadata.labels` 如果没有设置的话，
 不会被默认设置为 `.spec.template.metadata.labels`，所以需要明确进行设置。
@@ -2157,7 +2177,8 @@ replacement will be created immediately (even if the old Pod is still in a Termi
 #### Rolling Update Deployment
 
 The Deployment updates Pods in a rolling update
-fashion (gradually scale down the old ReplicaSets and scale up the new one) when `.spec.strategy.type==RollingUpdate`. You can specify `maxUnavailable` and `maxSurge` to control
+fashion (gradually scale down the old ReplicaSets and scale up the new one) when `.spec.strategy.type==RollingUpdate`. You can specify `maxUnavailable` and
+`maxSurge` to control
 the rolling update process.
 -->
 #### 滚动更新 Deployment   {#rolling-update-deployment}

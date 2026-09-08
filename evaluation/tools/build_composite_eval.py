@@ -71,6 +71,27 @@ def sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def normalize_corpus_content(content: str, max_line_chars: int = 160) -> str:
+    """Materialize source text without parser-hostile HTML breaks or huge lines."""
+    content = re.sub(r"<br\s*/?>", "\n", content, flags=re.IGNORECASE)
+    result: list[str] = []
+    for raw_line in content.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        line = raw_line.rstrip().replace("\t", "    ")
+        while len(line) > max_line_chars:
+            split_at = max(
+                line.rfind(mark, 0, max_line_chars + 1)
+                for mark in ("。", "！", "？", "；", ";", "，", ",", " ")
+            )
+            if split_at < max_line_chars // 2:
+                split_at = max_line_chars
+            else:
+                split_at += 1
+            result.append(line[:split_at].rstrip())
+            line = line[split_at:].lstrip()
+        result.append(line)
+    return "\n".join(result).strip()
+
+
 def slug(value: str) -> str:
     normalized = re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip("-.")
     return normalized or hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
@@ -174,10 +195,7 @@ class DatasetWriter:
             f"# {title}\n\n"
             f"> 评测来源：{attribution}\n> 上游记录：{source_record_id}\n\n"
         )
-        normalized_content = "\n".join(
-            line.rstrip().replace("\t", "    ")
-            for line in content.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-        ).strip()
+        normalized_content = normalize_corpus_content(content)
         materialized = header + normalized_content + "\n"
         path.write_text(materialized, encoding="utf-8")
         self.documents[doc_id] = {

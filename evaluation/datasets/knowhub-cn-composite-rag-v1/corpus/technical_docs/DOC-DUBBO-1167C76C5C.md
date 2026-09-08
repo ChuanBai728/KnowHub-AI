@@ -19,11 +19,14 @@ weight: 2
 在开发与生产部署过程中，由于 Dubbo 是一个需要基于服务发现功能进行调用的框架，很容易由于各种客观原因出现 `No Provder` 的异常，本文旨在通过体系化的排查思路，让您能够在异常的时候快速定位原因并解决。
 
 ```
-java.lang.IllegalStateException: Failed to check the status of the service org.apache.dubbo.samples.api.GreetingsService. No provider available for the service org.apache.dubbo.samples.api.GreetingsService from the url consumer://*** to the consumer 30.221.146.226 use dubbo version 3.2.0-beta.4
+java.lang.IllegalStateException: Failed to check the status of the service org.apache.dubbo.samples.api.GreetingsService. No provider available for the service
+org.apache.dubbo.samples.api.GreetingsService from the url consumer://*** to the consumer 30.221.146.226 use dubbo version 3.2.0-beta.4
 ```
 
 ```
-Exception in thread "main" org.apache.dubbo.rpc.RpcException: No provider available from registry 127.0.0.1:2181 for service org.apache.dubbo.samples.api.GreetingsService on consumer 30.221.146.226 use dubbo version 3.2.0-beta.4, please check status of providers(disabled, not registered or in blacklist).
+Exception in thread "main" org.apache.dubbo.rpc.RpcException: No provider available from registry 127.0.0.1:2181 for service
+org.apache.dubbo.samples.api.GreetingsService on consumer 30.221.146.226 use dubbo version 3.2.0-beta.4, please check status of providers(disabled, not
+registered or in blacklist).
 ```
 
 ## 一句话总结
@@ -61,7 +64,8 @@ ${group}/${interfaceName}:${version}
 如一下日志所示，可以在 Dubbo 的日志中搜索 `[DUBBO] Succeed Migrated to` 关键字，获取对应的订阅模式。
 
 ```
-[26/02/23 03:27:07:007 CST] main  INFO migration.MigrationRuleHandler:  [DUBBO] Succeed Migrated to APPLICATION_FIRST mode. Service Name: org.apache.dubbo.samples.api.GreetingsService, dubbo version: 3.2.0-beta.6-SNAPSHOT, current host: 192.168.31.5
+[26/02/23 03:27:07:007 CST] main  INFO migration.MigrationRuleHandler:  [DUBBO] Succeed Migrated to APPLICATION_FIRST mode. Service Name:
+org.apache.dubbo.samples.api.GreetingsService, dubbo version: 3.2.0-beta.6-SNAPSHOT, current host: 192.168.31.5
 ```
 
 当前 Dubbo 共有三种订阅模式：
@@ -88,7 +92,8 @@ ${group}/${interfaceName}:${version}
 1）接口级服务发现
 在接口级服务发现模型下，可以直接通过 Nacos 控制台查询服务信息，入口为 "服务管理" - "服务列表"，输入服务名在服务名称一栏搜索即可查询。
 
-注：Nacos 注册中心下，Dubbo 服务名与 Nacos 服务名映射关系为 `providers:${interfaceName}:${version}:${group}`，如 `dev/com.example.DemoService:1.0.0` 映射为 `providers:com.example.DemoService:1.0.0:dev`。
+注：Nacos 注册中心下，Dubbo 服务名与 Nacos 服务名映射关系为 `providers:${interfaceName}:${version}:${group}`，如 `dev/com.example.DemoService:1.0.0` 映射为
+`providers:com.example.DemoService:1.0.0:dev`。
 
 ![img](/imgs/docs3-v2/java-sdk/troubleshoot/1677399028899-c36dbb0e-a6a9-42f1-85f8-a746410588ec.png)
 
@@ -125,7 +130,10 @@ ${group}/${interfaceName}:${version}
 
 ```bash
 [zk: localhost:2181(CONNECTED) 1] ls /dubbo/org.apache.dubbo.samples.api.GreetingsService/providers
-[dubbo%3A%2F%2F30.221.144.195%3A20880%2Forg.apache.dubbo.samples.api.GreetingsService%3Fanyhost%3Dtrue%26application%3Dfirst-dubbo-provider%26background%3Dfalse%26deprecated%3Dfalse%26dubbo%3D2.0.2%26dynamic%3Dtrue%26environment%3Dproduct%26executor-management-mode%3Ddefault%26file-cache%3Dtrue%26generic%3Dfalse%26interface%3Dorg.apache.dubbo.samples.api.GreetingsService%26methods%3DsayHi%26pid%3D37828%26prefer.serialization%3Dfastjson2%2Chessian2%26release%3D3.2.0-beta.6-SNAPSHOT%26service-name-mapping%3Dtrue%26side%3Dprovider%26timestamp%3D1677463548624]
+[dubbo%3A%2F%2F30.221.144.195%3A20880%2Forg.apache.dubbo.samples.api.GreetingsService%3Fanyhost%3Dtrue%26application%3Dfirst-dubbo-provider%26background%3Dfalse
+%26deprecated%3Dfalse%26dubbo%3D2.0.2%26dynamic%3Dtrue%26environment%3Dproduct%26executor-management-mode%3Ddefault%26file-cache%3Dtrue%26generic%3Dfalse%26inte
+rface%3Dorg.apache.dubbo.samples.api.GreetingsService%26methods%3DsayHi%26pid%3D37828%26prefer.serialization%3Dfastjson2%2Chessian2%26release%3D3.2.0-beta.6-SNA
+PSHOT%26service-name-mapping%3Dtrue%26side%3Dprovider%26timestamp%3D1677463548624]
 ```
 
 如上所示，请结合前述第 1 步中服务发现模型确认是否能查询到预期的服务端。
@@ -234,7 +242,8 @@ As Consumer side:
 如果您由于各种原因无法使用 Dubbo QoS，可以在对应机器的日志上搜索 `[DUBBO] Export dubbo service ${serviceName}` 来检查服务是否已经发布。
 
 ```bash
-[26/02/23 04:34:41:041 CST] main  INFO config.ServiceConfig:  [DUBBO] Export dubbo service org.apache.dubbo.samples.api.GreetingsService to local registry url : injvm://***, dubbo version: 3.1.7, current host: 192.168.31.5
+[26/02/23 04:34:41:041 CST] main  INFO config.ServiceConfig:  [DUBBO] Export dubbo service org.apache.dubbo.samples.api.GreetingsService to local registry url :
+injvm://***, dubbo version: 3.1.7, current host: 192.168.31.5
 ```
 
 如上所示，则代表着该服务已经发布，如果您无法找到您所发布的服务，请检查以下清单：
@@ -245,7 +254,8 @@ As Consumer side:
 在确定了服务已经发布了以后，可以在对应机器的日志上搜索 `[DUBBO] Register dubbo service ${serviceName} to registry ${registryAddress}` 来检查服务是否已经注册。
 
 ```bash
-[26/02/23 04:34:41:041 CST] main  INFO config.ServiceConfig:  [DUBBO] Register dubbo service org.apache.dubbo.samples.api.GreetingsService url dubbo://*** to registry 127.0.0.1:8848, dubbo version: 3.1.7, current host: 192.168.31.5
+[26/02/23 04:34:41:041 CST] main  INFO config.ServiceConfig:  [DUBBO] Register dubbo service org.apache.dubbo.samples.api.GreetingsService url dubbo://*** to
+registry 127.0.0.1:8848, dubbo version: 3.1.7, current host: 192.168.31.5
 ```
 
 如上所示，则代表着该服务已经注册，如果您无法找到相关日志，请检查以下清单：
@@ -288,7 +298,8 @@ RegistryConfig: null
 如果您由于各种原因无法使用 Dubbo QoS，可以在对应机器的日志上搜索 `[DUBBO] <dubbo:registry address=` 来检查注册中心的配置。
 
 ```bash
-[27/02/23 09:36:46:046 CST] main  INFO context.ConfigManager:  [DUBBO] <dubbo:registry address="nacos://127.0.0.1:8848" protocol="nacos" port="8848" />, dubbo version: 3.2.0-beta.6-SNAPSHOT, current host: 30.221.144.195
+[27/02/23 09:36:46:046 CST] main  INFO context.ConfigManager:  [DUBBO] <dubbo:registry address="nacos://127.0.0.1:8848" protocol="nacos" port="8848" />, dubbo
+version: 3.2.0-beta.6-SNAPSHOT, current host: 30.221.144.195
 ```
 
 如上述结果所示，请检查对应的注册中心配置是否符合预期，如果不符合请修改对应的配置。
@@ -369,7 +380,8 @@ As Consumer side:
 
 如果您找到了您所发布的服务，但是对应的服务发现模型错误，请检查以下清单：
 
-1. 是否配置的订阅迁移规则，如 `dubbo-migration.yaml` 或动态配置，请参考 [应用级服务发现地址迁移规则说明](/zh-cn/overview/mannual/java-sdk/upgrades-and-compatibility/service-discovery/service-discovery-rule/)
+1. 是否配置的订阅迁移规则，如 `dubbo-migration.yaml` 或动态配置，请参考 [应用级服务发现地址迁移规则说明](/zh-cn/overview/mannual/java-sdk/upgrades-and-compatibility/service-discovery/service-discov
+ery-rule/)
 
 如果您找到了您所发布的服务，且对应的服务发现模型下地址数非 `0`，请跳转到第 7 步进行排查。
 
@@ -377,7 +389,8 @@ As Consumer side:
 如果您由于各种原因无法使用 Dubbo QoS，可以在对应机器的日志上搜索 `[DUBBO] Subscribe: ` 来检查服务是否已经订阅。
 
 ```bash
-[27/02/23 11:02:05:005 CST] main  INFO zookeeper.ZookeeperRegistry:  [DUBBO] Subscribe: consumer://***/org.apache.dubbo.samples.api.GreetingsService?***, dubbo version: 3.2.0-beta.6, current host: 30.221.144.195
+[27/02/23 11:02:05:005 CST] main  INFO zookeeper.ZookeeperRegistry:  [DUBBO] Subscribe: consumer://***/org.apache.dubbo.samples.api.GreetingsService?***, dubbo
+version: 3.2.0-beta.6, current host: 30.221.144.195
 ```
 
 如上所示，则代表着该服务已经发布，如果您无法找到您所发布的服务，请检查以下清单：
@@ -388,7 +401,9 @@ As Consumer side:
 在确定了服务已经订阅了以后，可以在对应机器的日志上搜索 `[DUBBO] Received invokers changed event from registry. ` 来检查服务是否已经推送。
 
 ```bash
-[27/02/23 11:02:05:005 CST] main  INFO integration.RegistryDirectory:  [DUBBO] Received invokers changed event from registry. Registry type: interface. Service Key: org.apache.dubbo.samples.api.GreetingsService. Urls Size : 1. Invokers Size : 1. Available Size: 1. Available Invokers : 30.221.144.195:20880, dubbo version: 3.2.0-beta.6, current host: 30.221.144.195
+[27/02/23 11:02:05:005 CST] main  INFO integration.RegistryDirectory:  [DUBBO] Received invokers changed event from registry. Registry type: interface. Service
+Key: org.apache.dubbo.samples.api.GreetingsService. Urls Size : 1. Invokers Size : 1. Available Size: 1. Available Invokers : 30.221.144.195:20880, dubbo
+version: 3.2.0-beta.6, current host: 30.221.144.195
 ```
 
 如上所示，则代表着该服务已经推送，如果您无法找到相关日志，请检查以下清单：
@@ -433,7 +448,8 @@ RegistryConfig: null
 如果您由于各种原因无法使用 Dubbo QoS，可以在对应机器的日志上搜索 `[DUBBO] <dubbo:registry address=` 来检查注册中心的配置。
 
 ```bash
-[27/02/23 09:36:46:046 CST] main  INFO context.ConfigManager:  [DUBBO] <dubbo:registry address="nacos://127.0.0.1:8848" protocol="nacos" port="8848" />, dubbo version: 3.2.0-beta.6-SNAPSHOT, current host: 30.221.144.195
+[27/02/23 09:36:46:046 CST] main  INFO context.ConfigManager:  [DUBBO] <dubbo:registry address="nacos://127.0.0.1:8848" protocol="nacos" port="8848" />, dubbo
+version: 3.2.0-beta.6-SNAPSHOT, current host: 30.221.144.195
 ```
 
 如上述结果所示，请检查对应的注册中心配置是否符合预期，如果不符合请修改对应的配置。
@@ -458,23 +474,40 @@ Escape character is '^]'.
 dubbo>getAddress org.apache.dubbo.samples.api.GreetingsService
 ConsumerModel: org.apache.dubbo.samples.api.GreetingsService@38b2d161
 
-Registry: zookeeper://127.0.0.1:2181/org.apache.dubbo.registry.RegistryService?application=first-dubbo-consumer&dubbo=2.0.2&environment=product&executor-management-mode=default&file-cache=true&interface=org.apache.dubbo.registry.RegistryService&pid=44482&release=3.2.0-beta.6-SNAPSHOT
+Registry: zookeeper://127.0.0.1:2181/org.apache.dubbo.registry.RegistryService?application=first-dubbo-consumer&dubbo=2.0.2&environment=product&executor-managem
+ent-mode=default&file-cache=true&interface=org.apache.dubbo.registry.RegistryService&pid=44482&release=3.2.0-beta.6-SNAPSHOT
 MigrationStep: APPLICATION_FIRST
 Interface-Level:
 All Invokers:
-dubbo://30.221.144.195:20880/org.apache.dubbo.samples.api.GreetingsService?anyhost=true&application=first-dubbo-provider&background=false&check=false&deprecated=false&dubbo=2.0.2&dynamic=true&executor-management-mode=default&file-cache=true&generic=false&interface=org.apache.dubbo.samples.api.GreetingsService&methods=sayHi&prefer.serialization=fastjson2,hessian2&release=3.2.0-beta.6-SNAPSHOT&service-name-mapping=true&side=provider
+dubbo://30.221.144.195:20880/org.apache.dubbo.samples.api.GreetingsService?anyhost=true&application=first-dubbo-provider&background=false&check=false&deprecated
+=false&dubbo=2.0.2&dynamic=true&executor-management-mode=default&file-cache=true&generic=false&interface=org.apache.dubbo.samples.api.GreetingsService&methods=s
+ayHi&prefer.serialization=fastjson2,hessian2&release=3.2.0-beta.6-SNAPSHOT&service-name-mapping=true&side=provider
 
 Valid Invokers:
-dubbo://30.221.144.195:20880/org.apache.dubbo.samples.api.GreetingsService?anyhost=true&application=first-dubbo-provider&background=false&check=false&deprecated=false&dubbo=2.0.2&dynamic=true&executor-management-mode=default&file-cache=true&generic=false&interface=org.apache.dubbo.samples.api.GreetingsService&methods=sayHi&prefer.serialization=fastjson2,hessian2&release=3.2.0-beta.6-SNAPSHOT&service-name-mapping=true&side=provider
+dubbo://30.221.144.195:20880/org.apache.dubbo.samples.api.GreetingsService?anyhost=true&application=first-dubbo-provider&background=false&check=false&deprecated
+=false&dubbo=2.0.2&dynamic=true&executor-management-mode=default&file-cache=true&generic=false&interface=org.apache.dubbo.samples.api.GreetingsService&methods=s
+ayHi&prefer.serialization=fastjson2,hessian2&release=3.2.0-beta.6-SNAPSHOT&service-name-mapping=true&side=provider
 
 Disabled Invokers:
 
 Application-Level:
 All Invokers:
-dubbo://30.221.144.195:20880/org.apache.dubbo.samples.api.GreetingsService?anyhost=true&application=first-dubbo-consumer&background=false&deprecated=false&dubbo=2.0.2&dubbo.endpoints=[{"port":20880,"protocol":"dubbo"}]&dubbo.metadata-service.url-params={"prefer.serialization":"fastjson2,hessian2","version":"1.0.0","dubbo":"2.0.2","release":"3.2.0-beta.6-SNAPSHOT","side":"provider","port":"20880","protocol":"dubbo"}&dubbo.metadata.revision=e37fc5748b33c325056556550d33dde7&dubbo.metadata.storage-type=local&dynamic=true&environment=product&executor-management-mode=default&file-cache=true&generic=false&interface=org.apache.dubbo.samples.api.GreetingsService&methods=sayHi&pid=44482&prefer.serialization=fastjson2,hessian2&register.ip=30.221.144.195&release=3.2.0-beta.6-SNAPSHOT&service-name-mapping=true&side=consumer&sticky=false&timestamp=1677466879396&unloadClusterRelated=false
+dubbo://30.221.144.195:20880/org.apache.dubbo.samples.api.GreetingsService?anyhost=true&application=first-dubbo-consumer&background=false&deprecated=false&dubbo
+=2.0.2&dubbo.endpoints=[{"port":20880,"protocol":"dubbo"}]&dubbo.metadata-service.url-params={"prefer.serialization":"fastjson2,hessian2","version":"1.0.0",
+"dubbo":"2.0.2","release":"3.2.0-beta.6-SNAPSHOT","side":"provider","port":"20880",
+"protocol":"dubbo"}&dubbo.metadata.revision=e37fc5748b33c325056556550d33dde7&dubbo.metadata.storage-type=local&dynamic=true&environment=product&executor-managem
+ent-mode=default&file-cache=true&generic=false&interface=org.apache.dubbo.samples.api.GreetingsService&methods=sayHi&pid=44482&prefer.serialization=fastjson2,
+hessian2&register.ip=30.221.144.195&release=3.2.0-beta.6-SNAPSHOT&service-name-mapping=true&side=consumer&sticky=false&timestamp=1677466879396&unloadClusterRela
+ted=false
 
 Valid Invokers:
-dubbo://30.221.144.195:20880/org.apache.dubbo.samples.api.GreetingsService?anyhost=true&application=first-dubbo-consumer&background=false&deprecated=false&dubbo=2.0.2&dubbo.endpoints=[{"port":20880,"protocol":"dubbo"}]&dubbo.metadata-service.url-params={"prefer.serialization":"fastjson2,hessian2","version":"1.0.0","dubbo":"2.0.2","release":"3.2.0-beta.6-SNAPSHOT","side":"provider","port":"20880","protocol":"dubbo"}&dubbo.metadata.revision=e37fc5748b33c325056556550d33dde7&dubbo.metadata.storage-type=local&dynamic=true&environment=product&executor-management-mode=default&file-cache=true&generic=false&interface=org.apache.dubbo.samples.api.GreetingsService&methods=sayHi&pid=44482&prefer.serialization=fastjson2,hessian2&register.ip=30.221.144.195&release=3.2.0-beta.6-SNAPSHOT&service-name-mapping=true&side=consumer&sticky=false&timestamp=1677466879396&unloadClusterRelated=false
+dubbo://30.221.144.195:20880/org.apache.dubbo.samples.api.GreetingsService?anyhost=true&application=first-dubbo-consumer&background=false&deprecated=false&dubbo
+=2.0.2&dubbo.endpoints=[{"port":20880,"protocol":"dubbo"}]&dubbo.metadata-service.url-params={"prefer.serialization":"fastjson2,hessian2","version":"1.0.0",
+"dubbo":"2.0.2","release":"3.2.0-beta.6-SNAPSHOT","side":"provider","port":"20880",
+"protocol":"dubbo"}&dubbo.metadata.revision=e37fc5748b33c325056556550d33dde7&dubbo.metadata.storage-type=local&dynamic=true&environment=product&executor-managem
+ent-mode=default&file-cache=true&generic=false&interface=org.apache.dubbo.samples.api.GreetingsService&methods=sayHi&pid=44482&prefer.serialization=fastjson2,
+hessian2&register.ip=30.221.144.195&release=3.2.0-beta.6-SNAPSHOT&service-name-mapping=true&side=consumer&sticky=false&timestamp=1677466879396&unloadClusterRela
+ted=false
 
 Disabled Invokers:
 
@@ -514,7 +547,8 @@ Disabled Invokers:
 
 请检查对应迁移模型是否符合预期，默认为 `APPLCATION_FIRST`，如果对应的服务发现模型错误，请检查以下清单：
 
-1. 是否配置的订阅迁移规则，如 `dubbo-migration.yaml` 或动态配置，请参考 [应用级服务发现地址迁移规则说明](/zh-cn/overview/mannual/java-sdk/upgrades-and-compatibility/service-discovery/service-discovery-rule/)
+1. 是否配置的订阅迁移规则，如 `dubbo-migration.yaml` 或动态配置，请参考 [应用级服务发现地址迁移规则说明](/zh-cn/overview/mannual/java-sdk/upgrades-and-compatibility/service-discovery/service-discov
+ery-rule/)
 
 如果迁移模型正确，请检查对应模型下的**所有**地址是否符合预期，如果不符合预期，请检查以下清单：
 
@@ -549,11 +583,17 @@ Disabled Invokers:
 在 Dubbo 出现调用异常的时候，可以在对应机器的日志上搜索 `[DUBBO] No provider available after route for the service` 来检查路由的状态。
 
 ```bash
-[27/02/23 11:33:16:016 CST] main  WARN cluster.SingleRouterChain:  [DUBBO] No provider available after route for the service org.apache.dubbo.samples.api.GreetingsService from registry 30.221.144.195 on the consumer 30.221.144.195 using the dubbo version 3.2.0-beta.6-SNAPSHOT. Router snapshot is below:
+[27/02/23 11:33:16:016 CST] main  WARN cluster.SingleRouterChain:  [DUBBO] No provider available after route for the service
+org.apache.dubbo.samples.api.GreetingsService from registry 30.221.144.195 on the consumer 30.221.144.195 using the dubbo version 3.2.0-beta.6-SNAPSHOT. Router
+snapshot is below:
 [ Parent (Input: 1) (Current Node Output: 1) (Chain Node Output: 0) ] Input: 30.221.144.195:20880 -> Chain Node Output: Empty
-  [ MockInvokersSelector (Input: 1) (Current Node Output: 1) (Chain Node Output: 0) Router message: invocation.need.mock not set. Return normal Invokers. ] Current Node Output: 30.221.144.195:20880
-    [ StandardMeshRuleRouter (Input: 1) (Current Node Output: 1) (Chain Node Output: 0) Router message: MeshRuleCache has not been built. Skip route. ] Current Node Output: 30.221.144.195:20880
-      [ TagStateRouter (Input: 1) (Current Node Output: 0) (Chain Node Output: 0) Router message: Disable Tag Router. Reason: tagRouterRule is invalid or disabled ] Current Node Output: Empty, dubbo version: 3.2.0-beta.6-SNAPSHOT, current host: 30.221.144.195, error code: 2-2. This may be caused by No provider available after route for the service, go to https://dubbo.apache.org/faq/2/2 to find instructions
+  [ MockInvokersSelector (Input: 1) (Current Node Output: 1) (Chain Node Output: 0) Router message: invocation.need.mock not set. Return normal Invokers. ]
+Current Node Output: 30.221.144.195:20880
+    [ StandardMeshRuleRouter (Input: 1) (Current Node Output: 1) (Chain Node Output: 0) Router message: MeshRuleCache has not been built. Skip route. ] Current
+Node Output: 30.221.144.195:20880
+      [ TagStateRouter (Input: 1) (Current Node Output: 0) (Chain Node Output: 0) Router message: Disable Tag Router. Reason: tagRouterRule is invalid or
+disabled ] Current Node Output: Empty, dubbo version: 3.2.0-beta.6-SNAPSHOT, current host: 30.221.144.195, error code: 2-2. This may be caused by No provider
+available after route for the service, go to https://dubbo.apache.org/faq/2/2 to find instructions
 ```
 
 请检查对应的 `Current Node Output: 0` 所在的日志行，通常为该级路由导致的地址为空。
@@ -573,21 +613,35 @@ dubbo>
 获取采样结果：
 ```bash
 dubbo>getRecentRouterSnapshot
-1658224330156 - Router snapshot service com.dubbo.dubbointegration.BackendService from registry 172.18.111.184 on the consumer 172.18.111.184 using the dubbo version 3.0.9 is below:
-[ Parent (Input: 2) (Current Node Output: 2) (Chain Node Output: 2) ] Input: 172.18.111.187:20880,172.18.111.183:20880 -> Chain Node Output: 172.18.111.187:20880,172.18.111.183:20880
-  [ MockInvokersSelector (Input: 2) (Current Node Output: 2) (Chain Node Output: 2) Router message: invocation.need.mock not set. Return normal Invokers. ] Current Node Output: 172.18.111.187:20880,172.18.111.183:20880
-    [ StandardMeshRuleRouter (Input: 2) (Current Node Output: 2) (Chain Node Output: 2) Router message: MeshRuleCache has not been built. Skip route. ] Current Node Output: 172.18.111.187:20880,172.18.111.183:20880
-      [ TagStateRouter (Input: 2) (Current Node Output: 2) (Chain Node Output: 2) Router message: Disable Tag Router. Reason: tagRouterRule is invalid or disabled ] Current Node Output: 172.18.111.187:20880,172.18.111.183:20880
-        [ ServiceStateRouter (Input: 2) (Current Node Output: 2) (Chain Node Output: 2) Router message: Directly return. Reason: Invokers from previous router is empty or conditionRouters is empty. ] Current Node Output: 172.18.111.187:20880,172.18.111.183:20880
-          [ AppStateRouter (Input: 2) (Current Node Output: 2) (Chain Node Output: 2) Router message: Directly return. Reason: Invokers from previous router is empty or conditionRouters is empty. ] Current Node Output: 172.18.111.187:20880,172.18.111.183:20880
+1658224330156 - Router snapshot service com.dubbo.dubbointegration.BackendService from registry 172.18.111.184 on the consumer 172.18.111.184 using the dubbo
+version 3.0.9 is below:
+[ Parent (Input: 2) (Current Node Output: 2) (Chain Node Output: 2) ] Input: 172.18.111.187:20880,172.18.111.183:20880 -> Chain Node Output:
+172.18.111.187:20880,172.18.111.183:20880
+  [ MockInvokersSelector (Input: 2) (Current Node Output: 2) (Chain Node Output: 2) Router message: invocation.need.mock not set. Return normal Invokers. ]
+Current Node Output: 172.18.111.187:20880,172.18.111.183:20880
+    [ StandardMeshRuleRouter (Input: 2) (Current Node Output: 2) (Chain Node Output: 2) Router message: MeshRuleCache has not been built. Skip route. ] Current
+Node Output: 172.18.111.187:20880,172.18.111.183:20880
+      [ TagStateRouter (Input: 2) (Current Node Output: 2) (Chain Node Output: 2) Router message: Disable Tag Router. Reason: tagRouterRule is invalid or
+disabled ] Current Node Output: 172.18.111.187:20880,172.18.111.183:20880
+        [ ServiceStateRouter (Input: 2) (Current Node Output: 2) (Chain Node Output: 2) Router message: Directly return. Reason: Invokers from previous router
+is empty or conditionRouters is empty. ] Current Node Output: 172.18.111.187:20880,172.18.111.183:20880
+          [ AppStateRouter (Input: 2) (Current Node Output: 2) (Chain Node Output: 2) Router message: Directly return. Reason: Invokers from previous router is
+empty or conditionRouters is empty. ] Current Node Output: 172.18.111.187:20880,172.18.111.183:20880
 
-1658224330156 - Router snapshot service com.dubbo.dubbointegration.BackendService from registry 172.18.111.184 on the consumer 172.18.111.184 using the dubbo version 3.0.9 is below:
-[ Parent (Input: 2) (Current Node Output: 2) (Chain Node Output: 2) ] Input: 172.18.111.187:20880,172.18.111.183:20880 -> Chain Node Output: 172.18.111.187:20880,172.18.111.183:20880
-  [ MockInvokersSelector (Input: 2) (Current Node Output: 2) (Chain Node Output: 2) Router message: invocation.need.mock not set. Return normal Invokers. ] Current Node Output: 172.18.111.187:20880,172.18.111.183:20880
-    [ StandardMeshRuleRouter (Input: 2) (Current Node Output: 2) (Chain Node Output: 2) Router message: MeshRuleCache has not been built. Skip route. ] Current Node Output: 172.18.111.187:20880,172.18.111.183:20880
-      [ TagStateRouter (Input: 2) (Current Node Output: 2) (Chain Node Output: 2) Router message: Disable Tag Router. Reason: tagRouterRule is invalid or disabled ] Current Node Output: 172.18.111.187:20880,172.18.111.183:20880
-        [ ServiceStateRouter (Input: 2) (Current Node Output: 2) (Chain Node Output: 2) Router message: Directly return. Reason: Invokers from previous router is empty or conditionRouters is empty. ] Current Node Output: 172.18.111.187:20880,172.18.111.183:20880
-          [ AppStateRouter (Input: 2) (Current Node Output: 2) (Chain Node Output: 2) Router message: Directly return. Reason: Invokers from previous router is empty or conditionRouters is empty. ] Current Node Output: 172.18.111.187:20880,172.18.111.183:20880
+1658224330156 - Router snapshot service com.dubbo.dubbointegration.BackendService from registry 172.18.111.184 on the consumer 172.18.111.184 using the dubbo
+version 3.0.9 is below:
+[ Parent (Input: 2) (Current Node Output: 2) (Chain Node Output: 2) ] Input: 172.18.111.187:20880,172.18.111.183:20880 -> Chain Node Output:
+172.18.111.187:20880,172.18.111.183:20880
+  [ MockInvokersSelector (Input: 2) (Current Node Output: 2) (Chain Node Output: 2) Router message: invocation.need.mock not set. Return normal Invokers. ]
+Current Node Output: 172.18.111.187:20880,172.18.111.183:20880
+    [ StandardMeshRuleRouter (Input: 2) (Current Node Output: 2) (Chain Node Output: 2) Router message: MeshRuleCache has not been built. Skip route. ] Current
+Node Output: 172.18.111.187:20880,172.18.111.183:20880
+      [ TagStateRouter (Input: 2) (Current Node Output: 2) (Chain Node Output: 2) Router message: Disable Tag Router. Reason: tagRouterRule is invalid or
+disabled ] Current Node Output: 172.18.111.187:20880,172.18.111.183:20880
+        [ ServiceStateRouter (Input: 2) (Current Node Output: 2) (Chain Node Output: 2) Router message: Directly return. Reason: Invokers from previous router
+is empty or conditionRouters is empty. ] Current Node Output: 172.18.111.187:20880,172.18.111.183:20880
+          [ AppStateRouter (Input: 2) (Current Node Output: 2) (Chain Node Output: 2) Router message: Directly return. Reason: Invokers from previous router is
+empty or conditionRouters is empty. ] Current Node Output: 172.18.111.187:20880,172.18.111.183:20880
 
 ···
 

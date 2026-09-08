@@ -112,7 +112,8 @@ See [Information security for Secrets](#information-security-for-secrets) for mo
 ## Uses for Secrets
 
 You can use Secrets for purposes such as the following:
-- [Set environment variables for a container](/docs/tasks/inject-data-application/distribute-credentials-secure/#define-container-environment-variables-using-secret-data).
+- [Set environment variables for a container](/docs/tasks/inject-data-application/distribute-credentials-secure/#define-container-environment-variables-using-se
+cret-data).
 - [Provide credentials such as SSH keys or passwords to Pods](/docs/tasks/inject-data-application/distribute-credentials-secure/#provide-prod-test-creds).
 - [Allow the kubelet to pull container images from private registries](/docs/tasks/configure-pod-container/pull-image-private-registry/).
 
@@ -394,7 +395,8 @@ API instead. You can get these short-lived tokens using the following methods:
   in your Pod manifest. Kubernetes creates the token and mounts it in the Pod.
   The token is automatically invalidated when the Pod that it's mounted in is
   deleted. For details, see
-  [Launch a Pod using service account token projection](/docs/tasks/configure-pod-container/configure-service-account/#launch-a-pod-using-service-account-token-projection).
+  [Launch a Pod using service account token projection](/docs/tasks/configure-pod-container/configure-service-account/#launch-a-pod-using-service-account-token-
+projection).
 -->
 - 直接调用 `TokenRequest` API，或者使用像 `kubectl` 这样的 API 客户端。
   例如，你可以使用
@@ -410,12 +412,14 @@ You should only create a ServiceAccount token Secret
 if you can't use the `TokenRequest` API to obtain a token,
 and the security exposure of persisting a non-expiring token credential
 in a readable API object is acceptable to you. For instructions, see
-[Manually create a long-lived API token for a ServiceAccount](/docs/tasks/configure-pod-container/configure-service-account/#manually-create-an-api-token-for-a-serviceaccount).
+[Manually create a long-lived API token for a ServiceAccount](/docs/tasks/configure-pod-container/configure-service-account/#manually-create-an-api-token-for-a-
+serviceaccount).
 -->
 只有在你无法使用 `TokenRequest` API 来获取令牌，
 并且你能够接受因为将永不过期的令牌凭据写入到可读取的 API 对象而带来的安全风险时，
 才应该创建 ServiceAccount 令牌 Secret。
-更多细节参阅[为 ServiceAccount 手动创建长期有效的 API 令牌](/zh-cn/docs/tasks/configure-pod-container/configure-service-account/#manually-create-an-api-token-for-a-serviceaccount)。
+更多细节参阅[为 ServiceAccount 手动创建长期有效的 API 令牌](/zh-cn/docs/tasks/configure-pod-container/configure-service-account/#manually-create-an-api-token-for-a-serviceaccount
+)。
 {{< /note >}}
 
 <!--
@@ -571,7 +575,8 @@ Docker configuration file):
 The `auth` value there is base64 encoded; it is obscured but not secret.
 Anyone who can read that Secret can learn the registry access bearer token.
 
-It is suggested to use [credential providers](/docs/tasks/administer-cluster/kubelet-credential-provider/) to dynamically and securely provide pull secrets on-demand.
+It is suggested to use [credential providers](/docs/tasks/administer-cluster/kubelet-credential-provider/) to dynamically and securely provide pull secrets
+on-demand.
 -->
 `auths` 值是 base64 编码的，其内容被屏蔽但未被加密。
 任何能够读取该 Secret 的人都可以了解镜像库的访问令牌。
@@ -990,10 +995,12 @@ the filesystem of one or more of the Pod's containers.
 
 <!--
 For instructions, refer to
-[Create a Pod that has access to the secret data through a Volume](/docs/tasks/inject-data-application/distribute-credentials-secure/#create-a-pod-that-has-access-to-the-secret-data-through-a-volume).
+[Create a Pod that has access to the secret data through a Volume](/docs/tasks/inject-data-application/distribute-credentials-secure/#create-a-pod-that-has-acce
+ss-to-the-secret-data-through-a-volume).
 -->
 相关的指示说明，
-可以参阅[创建一个可以通过卷访问 Secret 数据的 Pod](/zh-cn/docs/tasks/inject-data-application/distribute-credentials-secure/#create-a-pod-that-has-access-to-the-secret-data-through-a-volume)。
+可以参阅[创建一个可以通过卷访问 Secret 数据的 Pod](/zh-cn/docs/tasks/inject-data-application/distribute-credentials-secure/#create-a-pod-that-has-access-to-the-secret-data-throug
+h-a-volume)。
 
 <!--
 When a volume contains data from a Secret, and that Secret is updated, Kubernetes tracks
@@ -1072,7 +1079,8 @@ in a Pod:
 
 <!--
 For instructions, refer to
-[Define container environment variables using Secret data](/docs/tasks/inject-data-application/distribute-credentials-secure/#define-container-environment-variables-using-secret-data).
+[Define container environment variables using Secret data](/docs/tasks/inject-data-application/distribute-credentials-secure/#define-container-environment-varia
+bles-using-secret-data).
 -->
 相关的指示说明，
 可以参阅[使用 Secret 数据定义容器变量](/zh-cn/docs/tasks/inject-data-application/distribute-credentials-secure/#define-container-environment-variables-using-secret-data)。
@@ -1083,7 +1091,8 @@ names in pods is [restricted](/docs/tasks/inject-data-application/define-environ
 If any keys do not meet the rules, those keys are not made available to your container, though
 the Pod is allowed to start.
 -->
-需要注意的是，Pod 中环境变量名称允许的字符范围是[有限的](/zh-cn/docs/tasks/inject-data-application/define-environment-variable-container/#using-environment-variables-inside-of-your-config)。
+需要注意的是，Pod 中环境变量名称允许的字符范围是[有限的](/zh-cn/docs/tasks/inject-data-application/define-environment-variable-container/#using-environment-variables-inside-of-your-conf
+ig)。
 如果某些变量名称不满足这些规则，则即使 Pod 是可以启动的，你的容器也无法访问这些变量。
 
 <!--
@@ -1162,7 +1171,8 @@ You cannot use ConfigMaps or Secrets with {{< glossary_tooltip text="static Pods
 ### Use case: As container environment variables {#use-case-as-container-environment-variables}
 
 You can create a Secret and use it to
-[set environment variables for a container](/docs/tasks/inject-data-application/distribute-credentials-secure/#define-container-environment-variables-using-secret-data).
+[set environment variables for a container](/docs/tasks/inject-data-application/distribute-credentials-secure/#define-container-environment-variables-using-secr
+et-data).
 -->
 ## 使用场景  {#use-case}
 

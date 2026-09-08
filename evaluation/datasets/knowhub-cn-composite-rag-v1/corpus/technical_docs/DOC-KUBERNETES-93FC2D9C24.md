@@ -150,38 +150,44 @@ Events:
 ```
 
 <!--
-Here you can see configuration information about the container(s) and Pod (labels, resource requirements, etc.), as well as status information about the container(s) and Pod (state, readiness, restart count, events, etc.).
+Here you can see configuration information about the container(s) and Pod (labels, resource requirements, etc.), as well as status information about the
+container(s) and Pod (state, readiness, restart count, events, etc.).
 -->
 在这里，你可以看到有关容器和 Pod 的配置信息（标签、资源需求等），
 以及有关容器和 Pod 的状态信息（状态、就绪、重启计数、事件等）。
 
 <!--
-The container state is one of Waiting, Running, or Terminated. Depending on the state, additional information will be provided - here you can see that for a container in Running state, the system tells you when the container started.
+The container state is one of Waiting, Running, or Terminated. Depending on the state, additional information will be provided - here you can see that for a
+container in Running state, the system tells you when the container started.
 -->
 容器状态是 `Waiting`、`Running` 和 `Terminated` 之一。
 根据状态的不同，还有对应的额外的信息 —— 在这里你可以看到，
 对于处于运行状态的容器，系统会告诉你容器的启动时间。
 
 <!--
-Ready tells you whether the container passed its last readiness probe. (In this case, the container does not have a readiness probe configured; the container is assumed to be ready if no readiness probe is configured.)
+Ready tells you whether the container passed its last readiness probe. (In this case, the container does not have a readiness probe configured; the container is
+assumed to be ready if no readiness probe is configured.)
 -->
 `Ready` 指示是否通过了最后一个就绪态探测。
 （在本例中，容器没有配置就绪态探测；如果没有配置就绪态探测，则假定容器已经就绪。）
 
 <!--
-Restart Count tells you how many times the container has been restarted; this information can be useful for detecting crash loops in containers that are configured with a restart policy of `Always`.
+Restart Count tells you how many times the container has been restarted; this information can be useful for detecting crash loops in containers that are
+configured with a restart policy of `Always`.
 -->
 `Restart Count` 告诉你容器已重启的次数；
 这些信息对于定位配置了 `"Always"` 重启策略的容器持续崩溃问题非常有用。
 
 <!--
-Currently the only Condition associated with a Pod is the binary Ready condition, which indicates that the pod is able to service requests and should be added to the load balancing pools of all matching services.
+Currently the only Condition associated with a Pod is the binary Ready condition, which indicates that the pod is able to service requests and should be added
+to the load balancing pools of all matching services.
 -->
 目前，唯一与 Pod 有关的状态是 `Ready` 状况，该状况表明 Pod 能够为请求提供服务，
 并且应该添加到相应 Service 的负载均衡池中。
 
 <!--
-Lastly, you see a log of recent events related to your Pod. "From" indicates the component that is logging the event. "Reason" and "Message" tell you what happened.
+Lastly, you see a log of recent events related to your Pod. "From" indicates the component that is logging the event. "Reason" and "Message" tell you what
+happened.
 -->
 最后，你还可以看到与 Pod 相关的近期事件。
 “From” 标明记录事件的组件，“Reason” 和 “Message” 告诉你发生了什么。
@@ -189,7 +195,11 @@ Lastly, you see a log of recent events related to your Pod. "From" indicates the
 <!--
 ## Example: debugging Pending Pods
 
-A common scenario that you can detect using events is when you've created a Pod that won't fit on any node. For example, the Pod might request more resources than are free on any node, or it might specify a label selector that doesn't match any nodes. Let's say we created the previous Deployment with 5 replicas (instead of 2) and requesting 600 millicores instead of 500, on a four-node cluster where each (virtual) machine has 1 CPU. In that case one of the Pods will not be able to schedule. (Note that because of the cluster addon pods such as fluentd, skydns, etc., that run on each node, if we requested 1000 millicores then none of the Pods would be able to schedule.)
+A common scenario that you can detect using events is when you've created a Pod that won't fit on any node. For example, the Pod might request more resources
+than are free on any node, or it might specify a label selector that doesn't match any nodes. Let's say we created the previous Deployment with 5 replicas
+(instead of 2) and requesting 600 millicores instead of 500, on a four-node cluster where each (virtual) machine has 1 CPU. In that case one of the Pods will
+not be able to schedule. (Note that because of the cluster addon pods such as fluentd, skydns, etc., that run on each node, if we requested 1000 millicores then
+none of the Pods would be able to schedule.)
 -->
 ## 例子：调试 Pending 状态的 Pod
 
@@ -252,25 +262,29 @@ kubectl describe pod nginx-deployment-1370807587-fz9sd
   Events:
     FirstSeen    LastSeen    Count    From                    SubobjectPath    Type        Reason                Message
     ---------    --------    -----    ----                    -------------    --------    ------                -------
-    1m            48s            7        {default-scheduler }                    Warning        FailedScheduling    pod (nginx-deployment-1370807587-fz9sd) failed to fit in any node
+    1m            48s            7        {default-scheduler }                    Warning        FailedScheduling    pod (nginx-deployment-1370807587-fz9sd)
+failed to fit in any node
   fit failure on node (kubernetes-node-6ta5): Node didn't have enough resource: CPU, requested: 1000, used: 1420, capacity: 2000
   fit failure on node (kubernetes-node-wul5): Node didn't have enough resource: CPU, requested: 1000, used: 1100, capacity: 2000
 ```
 
 <!--
-Here you can see the event generated by the scheduler saying that the Pod failed to schedule for reason `FailedScheduling` (and possibly others).  The message tells us that there were not enough resources for the Pod on any of the nodes.
+Here you can see the event generated by the scheduler saying that the Pod failed to schedule for reason `FailedScheduling` (and possibly others).  The message
+tells us that there were not enough resources for the Pod on any of the nodes.
 -->
 这里你可以看到由调度器记录的事件，它表明了 Pod 不能被调度的原因是 `FailedScheduling`（也可能是其他值）。
 其 `message` 部分表明没有任何节点拥有足够多的资源。
 
 <!--
-To correct this situation, you can use `kubectl scale` to update your Deployment to specify four or fewer replicas. (Or you could leave the one Pod pending, which is harmless.)
+To correct this situation, you can use `kubectl scale` to update your Deployment to specify four or fewer replicas. (Or you could leave the one Pod pending,
+which is harmless.)
 -->
 要纠正这种情况，可以使用 `kubectl scale` 更新 Deployment，以指定 4 个或更少的副本。
 （或者你可以让 Pod 继续保持这个状态，这是无害的。）
 
 <!--
-Events such as the ones you saw at the end of `kubectl describe pod` are persisted in etcd and provide high-level information on what is happening in the cluster. To list all events you can use
+Events such as the ones you saw at the end of `kubectl describe pod` are persisted in etcd and provide high-level information on what is happening in the
+cluster. To list all events you can use
 -->
 你在 `kubectl describe pod` 结尾处看到的事件都保存在 etcd 中，
 并提供关于集群中正在发生的事情的高级信息。如果需要列出所有事件，可使用命令：
@@ -280,7 +294,8 @@ kubectl get events
 ```
 
 <!--
-but you have to remember that events are namespaced. This means that if you're interested in events for some namespaced object (e.g. what happened with Pods in namespace `my-namespace`) you need to explicitly provide a namespace to the command:
+but you have to remember that events are namespaced. This means that if you're interested in events for some namespaced object (e.g. what happened with Pods in
+namespace `my-namespace`) you need to explicitly provide a namespace to the command:
 -->
 但是，需要注意的是，事件是区分名字空间的。
 如果你对某些名字空间域的对象（比如 `my-namespace` 名字下的 Pod）的事件感兴趣,
@@ -296,7 +311,10 @@ To see events from all namespaces, you can use the `--all-namespaces` argument.
 查看所有名字空间的事件，可使用 `--all-namespaces` 参数。
 
 <!--
-In addition to `kubectl describe pod`, another way to get extra information about a pod (beyond what is provided by `kubectl get pod`) is to pass the `-o yaml` output format flag to `kubectl get pod`. This will give you, in YAML format, even more information than `kubectl describe pod` - essentially all of the information the system has about the Pod. Here you will see things like annotations (which are key-value metadata without the label restrictions, that is used internally by Kubernetes system components), restart policy, ports, and volumes.
+In addition to `kubectl describe pod`, another way to get extra information about a pod (beyond what is provided by `kubectl get pod`) is to pass the `-o yaml`
+output format flag to `kubectl get pod`. This will give you, in YAML format, even more information than `kubectl describe pod` - essentially all of the
+information the system has about the Pod. Here you will see things like annotations (which are key-value metadata without the label restrictions, that is used
+internally by Kubernetes system components), restart policy, ports, and volumes.
 -->
 除了 `kubectl describe pod` 以外，另一种获取 Pod 额外信息（除了 `kubectl get pod`）的方法
 是给 `kubectl get pod` 增加 `-o yaml` 输出格式参数。

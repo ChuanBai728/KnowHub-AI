@@ -372,6 +372,20 @@ def wait_for_condition(label: str, timeout_seconds: int, interval: int, fn):
     raise TimeoutError(f"Timed out waiting for {label}; last={last}")
 
 
+def wait_for_chat_terminal_status(client: KnowHubClient, conversation_id: str,
+                                  timeout_seconds: int = 30) -> dict[str, Any]:
+    """Wait for asynchronous turn finalization after the SSE stream closes."""
+    deadline = time.time() + timeout_seconds
+    session: dict[str, Any] = {}
+    while time.time() < deadline:
+        session = client.post("/api/v1/chat/session/detail", {"conversationId": conversation_id})
+        status = str(session.get("latestTurnStatus") or "UNKNOWN").upper()
+        if status not in {"RUNNING", "UNKNOWN", ""}:
+            return session
+        time.sleep(1)
+    return session
+
+
 def extract_steps(pipeline: dict[str, Any] | None) -> list[dict[str, Any]]:
     steps = ((pipeline or {}).get("steps") or [])
     result = []
@@ -405,7 +419,7 @@ def import_documents(client: KnowHubClient, output_dir: Path, poll_seconds: int)
 
     for index, item in enumerate(manifest, start=1):
         state_item = by_doc_id.get(item["doc_id"])
-        if state_item and state_item.get("indexStatus") == INDEX_SUCCESS:
+        if state_item and str(state_item.get("indexStatus")) == str(INDEX_SUCCESS):
             continue
 
         path = output_dir / item["path"]
@@ -570,7 +584,8 @@ def replay_conversation(client: KnowHubClient, question: dict[str, Any], convers
     return replayed
 
 
-def evaluate(client: KnowHubClient, output_dir: Path, chat_timeout: int) -> None:
+def evaluate(client: KnowHubClient, output_dir: Path, chat_timeout: int,
+             components: set[str] | None = None) -> None:
     state = json.loads((output_dir / "import-state.json").read_text(encoding="utf-8"))
     runtime_to_official = {
         str(item["runtime_document_id"]): item["doc_id"]
@@ -579,6 +594,8 @@ def evaluate(client: KnowHubClient, output_dir: Path, chat_timeout: int) -> None
     }
     official_to_runtime = {official: runtime for runtime, official in runtime_to_official.items()}
     gold = read_gold(output_dir)
+    if components:
+        gold = [item for item in gold if str(item.get("component") or "") in components]
 
     observations_path = output_dir / "observations.jsonl"
     completed = set()
@@ -611,7 +628,7 @@ def evaluate(client: KnowHubClient, output_dir: Path, chat_timeout: int) -> None
                         timeout=chat_timeout,
                     )
                     exchange_id = extract_exchange_id(events) or ""
-                    session = client.post("/api/v1/chat/session/detail", {"conversationId": conversation_id})
+                    session = wait_for_chat_terminal_status(client, conversation_id)
                     exchange_id = exchange_id or str(session.get("latestExchangeId") or "")
                     answer_status = str(session.get("latestTurnStatus") or "UNKNOWN").upper()
                     answer_error = str(session.get("latestTurnErrorMessage") or "")
@@ -629,7 +646,12 @@ def evaluate(client: KnowHubClient, output_dir: Path, chat_timeout: int) -> None
             retrieval_results = []
             channel_executions = []
             route_trace = {}
+            exchange_detail = {}
             if exchange_id:
+                exchange_detail = client.post("/api/v1/chat/exchange/detail", {
+                    "conversationId": conversation_id,
+                    "exchangeId": str(exchange_id),
+                })
                 retrieval_results = as_list(client.post("/api/v1/chat/exchange/retrieval/results", {
                     "conversationId": conversation_id,
                     "exchangeId": str(exchange_id),
@@ -705,6 +727,7 @@ def evaluate(client: KnowHubClient, output_dir: Path, chat_timeout: int) -> None
                 "route_document_ids": route_official_ids,
                 "route_trace": route_trace,
                 "channel_executions": channel_executions,
+                "exchange_detail": exchange_detail,
             }
             handle.write(json.dumps(observation, ensure_ascii=False) + "\n")
             handle.flush()
@@ -1018,6 +1041,11 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--poll-seconds", type=int, default=10)
     parser.add_argument("--timeout", type=int, default=60)
     parser.add_argument("--chat-timeout", type=int, default=360)
+    parser.add_argument(
+        "--components",
+        default="",
+        help="Comma-separated component names to evaluate; empty evaluates every component.",
+    )
     parser.add_argument("--phase", choices=["prepare", "import", "evaluate", "report", "all"], default="all")
     args = parser.parse_args(argv)
 
@@ -1038,7 +1066,8 @@ def main(argv: list[str]) -> int:
         if args.phase in ("import", "all"):
             import_documents(client, output_dir, args.poll_seconds)
         if args.phase in ("evaluate", "all"):
-            evaluate(client, output_dir, args.chat_timeout)
+            components = {item.strip() for item in args.components.split(",") if item.strip()}
+            evaluate(client, output_dir, args.chat_timeout, components or None)
 
     if args.phase == "report":
         write_report(output_dir)

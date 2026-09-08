@@ -41,6 +41,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.stream.Collectors;
 
 /**
@@ -90,6 +92,12 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
 
     /** 候选向量计算的批量大小（避免一次 embedding 太多导致超时） */
     private static final int ROUTE_EMBEDDING_BATCH_SIZE = 10;
+
+    /** 候选路由文本通常长期不变，缓存向量避免每次提问重复调用远端 embedding。 */
+    private static final ConcurrentMap<String, float[]> ROUTE_EMBEDDING_CACHE = new ConcurrentHashMap<>();
+
+    /** 防止长期频繁更新文档时缓存无界增长。 */
+    private static final int ROUTE_EMBEDDING_CACHE_MAX_SIZE = 20_000;
 
     /** 自动知识路由默认保留的文档候选数，避免过早收缩导致 gold document 被截断。 */
     private static final int ROUTE_DOCUMENT_CANDIDATE_LIMIT = 20;
@@ -847,11 +855,27 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
             for (int index = 0; index < normalizedRouteTexts.size(); index++) {
                 scores.add(0D);
             }
-            // 分批计算 embedding
-            int totalBatchCount = (normalizedRouteTexts.size() + ROUTE_EMBEDDING_BATCH_SIZE - 1) / ROUTE_EMBEDDING_BATCH_SIZE;
-            for (int startIndex = 0; startIndex < normalizedRouteTexts.size(); startIndex += ROUTE_EMBEDDING_BATCH_SIZE) {
-                int endIndex = Math.min(startIndex + ROUTE_EMBEDDING_BATCH_SIZE, normalizedRouteTexts.size());
-                List<String> currentBatch = normalizedRouteTexts.subList(startIndex, endIndex);
+            if (ROUTE_EMBEDDING_CACHE.size() > ROUTE_EMBEDDING_CACHE_MAX_SIZE) {
+                ROUTE_EMBEDDING_CACHE.clear();
+            }
+            List<Integer> missingIndexes = new ArrayList<>();
+            List<String> missingTexts = new ArrayList<>();
+            for (int index = 0; index < normalizedRouteTexts.size(); index++) {
+                String routeText = normalizedRouteTexts.get(index);
+                float[] cachedEmbedding = ROUTE_EMBEDDING_CACHE.get(routeText);
+                if (cachedEmbedding == null) {
+                    missingIndexes.add(index);
+                    missingTexts.add(routeText);
+                }
+                else {
+                    scores.set(index, cosineSimilarity(queryContext.queryEmbedding(), cachedEmbedding));
+                }
+            }
+            // 只为首次出现或发生变化的候选文本分批计算 embedding。
+            int totalBatchCount = (missingTexts.size() + ROUTE_EMBEDDING_BATCH_SIZE - 1) / ROUTE_EMBEDDING_BATCH_SIZE;
+            for (int startIndex = 0; startIndex < missingTexts.size(); startIndex += ROUTE_EMBEDDING_BATCH_SIZE) {
+                int endIndex = Math.min(startIndex + ROUTE_EMBEDDING_BATCH_SIZE, missingTexts.size());
+                List<String> currentBatch = missingTexts.subList(startIndex, endIndex);
                 int currentBatchIndex = (startIndex / ROUTE_EMBEDDING_BATCH_SIZE) + 1;
                 log.debug("知识路由候选向量分批计算: batchIndex={}/{}, candidateRange=[{}, {}], batchSize={}",
                     currentBatchIndex, totalBatchCount, startIndex + 1, endIndex, currentBatch.size());
@@ -860,7 +884,12 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
                     return routeTexts.stream().map(item -> 0D).toList();
                 }
                 for (int batchIndex = 0; batchIndex < embeddings.size(); batchIndex++) {
-                    scores.set(startIndex + batchIndex, cosineSimilarity(queryContext.queryEmbedding(), embeddings.get(batchIndex)));
+                    int missingIndex = startIndex + batchIndex;
+                    int scoreIndex = missingIndexes.get(missingIndex);
+                    String routeText = missingTexts.get(missingIndex);
+                    float[] embedding = embeddings.get(batchIndex);
+                    ROUTE_EMBEDDING_CACHE.putIfAbsent(routeText, embedding);
+                    scores.set(scoreIndex, cosineSimilarity(queryContext.queryEmbedding(), embedding));
                 }
             }
             return scores;
@@ -876,7 +905,14 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
         if (!queryContext.semanticEnabled()) {
             return 0D;
         }
-        float[] routeEmbedding = embedSingle(routeText);
+        String normalizedRouteText = StrUtil.blankToDefault(routeText, "").trim();
+        float[] routeEmbedding = ROUTE_EMBEDDING_CACHE.get(normalizedRouteText);
+        if (routeEmbedding == null) {
+            routeEmbedding = embedSingle(normalizedRouteText);
+            if (routeEmbedding != null) {
+                ROUTE_EMBEDDING_CACHE.putIfAbsent(normalizedRouteText, routeEmbedding);
+            }
+        }
         if (routeEmbedding == null) {
             return 0D;
         }

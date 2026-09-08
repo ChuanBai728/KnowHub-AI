@@ -517,11 +517,13 @@ Other keys from the ConfigMap data are not copied into the environment.
 
 <!--
 It's important to note that the range of characters allowed for environment
-variable names in pods is [restricted](/docs/tasks/inject-data-application/define-environment-variable-container/#using-environment-variables-inside-of-your-config).
+variable names in pods is [restricted](/docs/tasks/inject-data-application/define-environment-variable-container/#using-environment-variables-inside-of-your-con
+fig).
 If any keys do not meet the rules, those keys are not made available to your container, though
 the Pod is allowed to start.
 -->
-需要注意的是，Pod 中环境变量名称允许的字符范围是[有限的](/zh-cn/docs/tasks/inject-data-application/define-environment-variable-container/#using-environment-variables-inside-of-your-config)。
+需要注意的是，Pod 中环境变量名称允许的字符范围是[有限的](/zh-cn/docs/tasks/inject-data-application/define-environment-variable-container/#using-environment-variables-inside-of-your-conf
+ig)。
 如果某些变量名称不满足这些规则，则即使 Pod 可以被启动，你的容器也无法访问这些环境变量。
 
 <!--

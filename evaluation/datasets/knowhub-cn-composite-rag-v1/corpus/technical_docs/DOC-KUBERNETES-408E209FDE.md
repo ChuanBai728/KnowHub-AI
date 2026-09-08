@@ -181,9 +181,13 @@ created anew.
 这个相关的对象（例如这里的卷）也会被删除并重建。
 
 <!--
-{{< figure src="/images/docs/pod.svg" title="Figure 1." class="diagram-medium" caption="A multi-container Pod that contains a file puller [sidecar](/docs/concepts/workloads/pods/sidecar-containers/) and a web server. The Pod uses an [ephemeral `emptyDir` volume](/docs/concepts/storage/volumes/#emptydir) for shared storage between the containers." >}}
+{{< figure src="/images/docs/pod.svg" title="Figure 1." class="diagram-medium" caption="A multi-container Pod that contains a file puller
+[sidecar](/docs/concepts/workloads/pods/sidecar-containers/) and a web server. The Pod uses an [ephemeral `emptyDir`
+volume](/docs/concepts/storage/volumes/#emptydir) for shared storage between the containers." >}}
 -->
-{{< figure src="/images/docs/pod.svg" title="图 1" class="diagram-medium" caption="一个包含文件拉取程序 [Sidecar（边车）](/zh-cn/docs/concepts/workloads/pods/sidecar-containers/) 和 Web 服务器的多容器 Pod。此 Pod 使用[临时 `emptyDir` 卷](/zh-cn/docs/concepts/storage/volumes/#emptydir)作为容器之间的共享存储。" >}}
+{{< figure src="/images/docs/pod.svg" title="图 1" class="diagram-medium" caption="一个包含文件拉取程序
+[Sidecar（边车）](/zh-cn/docs/concepts/workloads/pods/sidecar-containers/) 和 Web 服务器的多容器 Pod。此 Pod 使用[临时 `emptyDir`
+卷](/zh-cn/docs/concepts/storage/volumes/#emptydir)作为容器之间的共享存储。" >}}
 
 
 <!--
@@ -221,11 +225,15 @@ Pod 阶段的数量和含义是严格定义的。
 <!--
 Value       | Description
 :-----------|:-----------
-`Pending`   | The Pod has been accepted by the Kubernetes cluster, but one or more of the containers has not been set up and made ready to run. This includes time a Pod spends waiting to be scheduled as well as the time spent downloading container images over the network.
-`Running`   | The Pod has been bound to a node, and all of the containers have been created. At least one container is still running, or is in the process of starting or restarting.
+`Pending`   | The Pod has been accepted by the Kubernetes cluster, but one or more of the containers has not been set up and made ready to run. This includes
+time a Pod spends waiting to be scheduled as well as the time spent downloading container images over the network.
+`Running`   | The Pod has been bound to a node, and all of the containers have been created. At least one container is still running, or is in the process of
+starting or restarting.
 `Succeeded` | All containers in the Pod have terminated in success, and will not be restarted.
-`Failed`    | All containers in the Pod have terminated, and at least one container has terminated in failure. That is, the container either exited with non-zero status or was terminated by the system, and is not set for automatic restarting.
-`Unknown`   | For some reason the state of the Pod could not be obtained. This phase typically occurs due to an error in communicating with the node where the Pod should be running.
+`Failed`    | All containers in the Pod have terminated, and at least one container has terminated in failure. That is, the container either exited with
+non-zero status or was terminated by the system, and is not set for automatic restarting.
+`Unknown`   | For some reason the state of the Pod could not be obtained. This phase typically occurs due to an error in communicating with the node where the
+Pod should be running.
 -->
 取值 | 描述
 :-----|:-----------
@@ -577,7 +585,8 @@ The following table shows how containers behave under different restart policies
 The restart behavior is particularly important when choosing between Deployments and Jobs:
 - **Deployments** typically use `restartPolicy: Always` (the only allowed value) to keep applications running continuously
 - **Jobs** commonly use `restartPolicy: OnFailure` or `restartPolicy: Never` to handle batch processing tasks appropriately
-- **Sidecar containers** are init containers that always restart regardless of the Pod's `restartPolicy` because they have their own container-level `restartPolicy: Always`
+- **Sidecar containers** are init containers that always restart regardless of the Pod's `restartPolicy` because they have their own container-level
+`restartPolicy: Always`
 -->
 在选择 Deployment 还是 Job 时，重启行为尤为重要：
 
@@ -759,7 +768,8 @@ spec:
 
 {{< note >}}
 <!--
-While the main application container follows the Pod's `restartPolicy: OnFailure`, the sidecar container will restart regardless of its exit code because sidecar containers always have `restartPolicy: Always` at the container level.
+While the main application container follows the Pod's `restartPolicy: OnFailure`, the sidecar container will restart regardless of its exit code because
+sidecar containers always have `restartPolicy: Always` at the container level.
 -->
 虽然主应用程序容器遵循 Pod 的 `restartPolicy: OnFailure`，
 但边车容器无论其退出代码如何都会重新启动，因为边车容器在容器级别会始终设置
@@ -1180,7 +1190,8 @@ Kubelet 管理以下 PodCondition：
 * `Ready`: the Pod is able to serve requests and should be added to the load
   balancing pools of all matching Services.
 * `DisruptionTarget`: the pod is about to be terminated due to a disruption (such as preemption, eviction or garbage-collection).
-* `PodResizePending`: a pod resize was requested but cannot be applied. See [Pod resize status](/docs/tasks/configure-pod-container/resize-container-resources#pod-resize-status).
+* `PodResizePending`: a pod resize was requested but cannot be applied. See [Pod resize
+status](/docs/tasks/configure-pod-container/resize-container-resources#pod-resize-status).
 * `PodResizeInProgress`: the pod is in the process of resizing. See
   [Pod resize status](/docs/tasks/configure-pod-container/resize-container-resources#pod-resize-status).
 -->
