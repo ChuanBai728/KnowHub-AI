@@ -23,6 +23,41 @@ import static org.mockito.Mockito.when;
 class DocumentQuestionRouterTest {
 
     @Test
+    void routesContentLocationQuestionToGraphOnly() {
+        DocumentStructureGraphService graphService = mock(DocumentStructureGraphService.class);
+        GraphSection section = GraphSection.builder()
+            .nodeId(201L)
+            .documentId(10L)
+            .title("使用 ConfigMap")
+            .sectionPath("ConfigMap > 使用 ConfigMap")
+            .build();
+        when(graphService.listSections(10L)).thenReturn(List.of());
+        when(graphService.findBestSection(10L, "Kubernetes ConfigMap 文档中，介绍 ConfigMap 各种使用方式的内容位于哪个一级章节？", ""))
+            .thenReturn(section);
+
+        @SuppressWarnings("unchecked")
+        ObjectProvider<DocumentNavigationIndexService> navigationIndexProvider = mock(ObjectProvider.class);
+        DocumentQuestionRouter router = new DocumentQuestionRouter(
+            graphService,
+            navigationIndexProvider,
+            mock(ObservedChatModelService.class),
+            mock(PromptTemplateService.class),
+            new ObjectMapper()
+        );
+        String question = "Kubernetes ConfigMap 文档中，介绍 ConfigMap 各种使用方式的内容位于哪个一级章节？";
+
+        DocumentNavigationDecision decision = router.route(
+            10L,
+            question,
+            new RagRewriteResult(question, List.of(question))
+        );
+
+        assertThat(decision.getExecutionMode()).isEqualTo(ExecutionMode.GRAPH_ONLY);
+        assertThat(decision.getNavigationAction()).isEqualTo(DocumentNavigationAction.SECTION_ADJACENCY_LOOKUP);
+        assertThat(decision.getStructureAnchor().getTargetSectionHint()).contains("使用 ConfigMap");
+    }
+
+    @Test
     void prefersExplicitQuotedSectionTitleForChildSectionQuestion() {
         DocumentStructureGraphService graphService = mock(DocumentStructureGraphService.class);
         GraphSection accountLifecycle = GraphSection.builder()

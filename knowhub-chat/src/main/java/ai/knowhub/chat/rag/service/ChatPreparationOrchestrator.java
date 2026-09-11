@@ -36,6 +36,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 【聊天准备编排器 — RAG 流水线的"总指挥"】
@@ -61,6 +63,11 @@ import java.util.Set;
 @Slf4j
 @Service
 public class ChatPreparationOrchestrator {
+
+    private static final String EXPLICIT_DOCUMENT_REASON = "用户问题明确提及文档名";
+    private static final String FULL_CORPUS_REASON = "离线评测使用全语料检索范围";
+    private static final Pattern LATIN_TITLE_TOKEN_PATTERN = Pattern.compile("[A-Za-z][A-Za-z0-9]*");
+    private static final Set<String> GENERIC_TITLE_TOKENS = Set.of("apache", "dubbo");
 
     /**
      * 能力询问提示词——用户在问"你能做什么"这类问题时，不应该走文档问答。
@@ -261,6 +268,11 @@ public class ChatPreparationOrchestrator {
             KnowledgeRouteDecision routeDecision = knowledgeRouteService.route(question, rewriteQuestion);
             knowledgeRouteService.recordAutoRoute(conversationId, taskInfo.exchangeId(), question, rewriteQuestion, routeDecision);
             List<DocumentRouteCandidate> candidateDocuments = selectAutoCandidates(routeDecision, question, rewriteQuestion);
+            boolean fullCorpusRetrieval = properties.isForceRetrievalMode()
+                && properties.isForceRetrievalFullCorpus();
+            if (fullCorpusRetrieval) {
+                candidateDocuments = fullCorpusCandidates();
+            }
             // 如果需要澄清（范围不清晰），直接返回澄清模式的执行计划。
             // 评测/批处理模式下可关闭澄清，让问题继续进入 RAG 检索链路。
             if (shouldAskClarification(routeDecision, candidateDocuments)) {
@@ -287,9 +299,11 @@ public class ChatPreparationOrchestrator {
                     .build();
             }
             // 置信度足够高时，选择排名第一的文档
-            boolean confidentTopDocument = routeDecision != null
+            boolean explicitTopDocument = !candidateDocuments.isEmpty()
+                && EXPLICIT_DOCUMENT_REASON.equals(candidateDocuments.get(0).getReason());
+            boolean confidentTopDocument = !fullCorpusRetrieval && (explicitTopDocument || routeDecision != null
                 && routeDecision.getConfidence() != null
-                && routeDecision.getConfidence().doubleValue() >= 0.55D;
+                && routeDecision.getConfidence().doubleValue() >= 0.55D);
             DocumentRouteCandidate topDocument = confidentTopDocument && !candidateDocuments.isEmpty() ? candidateDocuments.get(0) : null;
             if (topDocument != null && StrUtil.isNotBlank(topDocument.getDocumentId()) && StrUtil.isNotBlank(topDocument.getLastIndexTaskId())) {
                 routedDocumentId = Long.valueOf(topDocument.getDocumentId());
@@ -319,6 +333,8 @@ public class ChatPreparationOrchestrator {
                         "confidence", routeDecision == null || routeDecision.getConfidence() == null ? "" : routeDecision.getConfidence().toPlainString(),
                         "routeStatus", routeDecision == null ? "" : StrUtil.blankToDefault(routeDecision.getRouteStatus(), ""),
                         "candidateDocumentCount", candidateDocuments.size(),
+                        "fullCorpusRetrieval", fullCorpusRetrieval,
+                        "explicitTopDocument", explicitTopDocument,
                         "confidentTopDocument", confidentTopDocument,
                         "topDocumentId", topDocument == null ? "" : StrUtil.blankToDefault(topDocument.getDocumentId(), ""),
                         "topDocumentName", topDocument == null ? "" : StrUtil.blankToDefault(topDocument.getDocumentName(), "")
@@ -628,29 +644,137 @@ public class ChatPreparationOrchestrator {
      * 如果知识路由服务给出了高置信度的候选，直接使用；
      * 否则合并路由候选和基于文档元数据的兜底候选。
      */
-    private List<DocumentRouteCandidate> selectAutoCandidates(KnowledgeRouteDecision routeDecision,
-                                                              String question,
-                                                              String rewriteQuestion) {
-        if (routeDecision == null || routeDecision.getDocuments() == null || routeDecision.getDocuments().isEmpty()) {
-            return fallbackDocuments(question, rewriteQuestion, resolveRouteDocumentTopK());
-        }
-        int candidateLimit = resolveRouteDocumentTopK();
-        List<DocumentRouteCandidate> candidates = routeDecision.getDocuments().stream()
+    List<DocumentRouteCandidate> selectAutoCandidates(KnowledgeRouteDecision routeDecision,
+                                                      String question,
+                                                      String rewriteQuestion) {
+        boolean lowConfidence = routeDecision == null
+            || routeDecision.getConfidence() == null
+            || routeDecision.getConfidence().doubleValue() < 0.55D;
+        int candidateLimit = lowConfidence
+            ? Math.max(resolveRouteDocumentTopK(), properties.getLowConfidenceRouteDocumentTopK())
+            : resolveRouteDocumentTopK();
+        List<DocumentRouteCandidate> explicit = explicitDocumentCandidates(question, rewriteQuestion);
+        List<DocumentRouteCandidate> routed = routeDecision == null || routeDecision.getDocuments() == null
+            ? List.of()
+            : routeDecision.getDocuments().stream()
             .filter(item -> StrUtil.isNotBlank(item.getDocumentId()) && StrUtil.isNotBlank(item.getLastIndexTaskId()))
             .limit(candidateLimit)
             .toList();
-        if (candidates.isEmpty()) {
-            return fallbackDocuments(question, rewriteQuestion, candidateLimit);
+        List<DocumentRouteCandidate> candidates = mergeCandidates(explicit, routed, candidateLimit);
+        if (!lowConfidence && !candidates.isEmpty()) {
+            return candidates;
         }
-        // 低置信度时合并路由候选和兜底候选
-        if (routeDecision.getConfidence() != null && routeDecision.getConfidence().doubleValue() < 0.55D) {
-            return mergeCandidates(candidates, fallbackDocuments(question, rewriteQuestion, candidateLimit), candidateLimit);
-        }
-        return candidates;
+        return mergeCandidates(
+            candidates,
+            fallbackDocuments(question, rewriteQuestion, candidateLimit),
+            candidateLimit
+        );
     }
 
     private int resolveRouteDocumentTopK() {
         return Math.max(1, properties.getRouteDocumentTopK());
+    }
+
+    List<DocumentRouteCandidate> fullCorpusCandidates() {
+        return documentDescriptors().stream()
+            .map(item -> toRouteCandidate(item, BigDecimal.ZERO, FULL_CORPUS_REASON))
+            .toList();
+    }
+
+    private List<DocumentRouteCandidate> explicitDocumentCandidates(String question, String rewriteQuestion) {
+        String rawQuery = safeText(question) + " " + safeText(rewriteQuestion);
+        String query = normalizeFallbackText(rawQuery);
+        if (query.isBlank()) {
+            return List.of();
+        }
+        return documentDescriptors().stream()
+            .map(item -> Map.entry(item, explicitDocumentTitleScore(item.getDocumentName(), rawQuery)))
+            .filter(entry -> entry.getValue() > 0D)
+            .sorted(Map.Entry.<KnowledgeDocumentDescriptor, Double>comparingByValue().reversed())
+            .map(entry -> toRouteCandidate(
+                entry.getKey(),
+                BigDecimal.valueOf(entry.getValue()),
+                EXPLICIT_DOCUMENT_REASON
+            ))
+            .toList();
+    }
+
+    double explicitDocumentTitleScore(String documentName, String queryText) {
+        String normalizedTitle = normalizeFallbackText(documentName).replace("的", "");
+        String normalizedQuery = normalizeFallbackText(queryText).replace("的", "");
+        if (normalizedTitle.length() < 4 || normalizedQuery.isBlank()) {
+            return 0D;
+        }
+        List<String> aliases = List.of(
+            normalizedTitle,
+            normalizedTitle.replaceFirst("^apache", ""),
+            normalizedTitle.replaceFirst("^apachedubbo", "")
+        );
+        int longestAlias = aliases.stream()
+            .filter(alias -> alias.length() >= 4 && normalizedQuery.contains(alias))
+            .mapToInt(String::length)
+            .max()
+            .orElse(0);
+        if (longestAlias > 0) {
+            return 1000D + longestAlias;
+        }
+
+        List<String> latinTokens = latinTitleTokens(documentName);
+        boolean latinMatched = !latinTokens.isEmpty()
+            && latinTokens.stream().allMatch(normalizedQuery::contains);
+        long chineseBigramHits = chineseBigrams(documentName).stream()
+            .filter(normalizedQuery::contains)
+            .count();
+        return latinMatched && chineseBigramHits > 0
+            ? 900D + latinTokens.size() * 10D + chineseBigramHits
+            : 0D;
+    }
+
+    private List<String> latinTitleTokens(String documentName) {
+        LinkedHashSet<String> tokens = new LinkedHashSet<>();
+        Matcher matcher = LATIN_TITLE_TOKEN_PATTERN.matcher(StrUtil.blankToDefault(documentName, ""));
+        while (matcher.find()) {
+            String token = matcher.group().toLowerCase(Locale.ROOT);
+            if (token.length() >= 2 && !GENERIC_TITLE_TOKENS.contains(token)) {
+                tokens.add(token);
+            }
+        }
+        return new ArrayList<>(tokens);
+    }
+
+    private List<String> chineseBigrams(String text) {
+        String chinese = StrUtil.blankToDefault(text, "").replaceAll("[^\\p{IsHan}]", "");
+        if (chinese.length() < 2) {
+            return List.of();
+        }
+        LinkedHashSet<String> bigrams = new LinkedHashSet<>();
+        for (int index = 0; index + 2 <= chinese.length(); index++) {
+            bigrams.add(chinese.substring(index, index + 2));
+        }
+        return new ArrayList<>(bigrams);
+    }
+
+    private List<KnowledgeDocumentDescriptor> documentDescriptors() {
+        List<KnowledgeDocumentDescriptor> descriptors = documentKnowledgeService.listRetrievableDocuments();
+        return descriptors == null ? List.of() : descriptors.stream()
+            .filter(item -> item.getDocumentId() != null && item.getLastIndexTaskId() != null)
+            .toList();
+    }
+
+    private DocumentRouteCandidate toRouteCandidate(KnowledgeDocumentDescriptor item,
+                                                     BigDecimal score,
+                                                     String reason) {
+        return new DocumentRouteCandidate(
+            String.valueOf(item.getDocumentId()),
+            item.getDocumentName(),
+            String.valueOf(item.getLastIndexTaskId()),
+            StrUtil.blankToDefault(item.getKnowledgeScopeCode(), ""),
+            StrUtil.blankToDefault(item.getKnowledgeScopeName(), ""),
+            StrUtil.blankToDefault(item.getBusinessCategory(), ""),
+            StrUtil.blankToDefault(item.getDocumentTags(), ""),
+            score.setScale(4, RoundingMode.HALF_UP),
+            reason
+        );
     }
 
     /**
@@ -662,7 +786,7 @@ public class ChatPreparationOrchestrator {
                                                            String rewriteQuestion,
                                                            int limit) {
         // 路由服务没有给出稳定候选时，用文档元数据做保守兜底，至少给用户一个可确认的范围。
-        List<KnowledgeDocumentDescriptor> descriptors = documentKnowledgeService.listRetrievableDocuments();
+        List<KnowledgeDocumentDescriptor> descriptors = documentDescriptors();
         if (descriptors == null || descriptors.isEmpty()) {
             return List.of();
         }
@@ -673,15 +797,9 @@ public class ChatPreparationOrchestrator {
                 fallbackDescriptorScore(left, queryTerms)
             ))
             .limit(Math.max(1, limit))
-            .map(item -> new DocumentRouteCandidate(
-                String.valueOf(item.getDocumentId()),
-                item.getDocumentName(),
-                item.getLastIndexTaskId() == null ? "" : String.valueOf(item.getLastIndexTaskId()),
-                StrUtil.blankToDefault(item.getKnowledgeScopeCode(), ""),
-                StrUtil.blankToDefault(item.getKnowledgeScopeName(), ""),
-                StrUtil.blankToDefault(item.getBusinessCategory(), ""),
-                StrUtil.blankToDefault(item.getDocumentTags(), ""),
-                BigDecimal.valueOf(fallbackDescriptorScore(item, queryTerms)).setScale(4, RoundingMode.HALF_UP),
+            .map(item -> toRouteCandidate(
+                item,
+                BigDecimal.valueOf(fallbackDescriptorScore(item, queryTerms)),
                 "低置信度时基于文档元数据进行保守扩范围候选"
             ))
             .toList();
@@ -704,14 +822,12 @@ public class ChatPreparationOrchestrator {
      *
      * 澄清的条件：
      * 1. 没有任何候选文档
-     * 2. 路由服务没有给出候选
-     * 3. 路由置信度低于 0.55
-     * 4. 前两个候选的分数差距很小，且属于不同知识域（说明问题有歧义）
+     * 2. 前两个候选的分数差距很小，且属于不同知识域（说明问题确实存在范围歧义）
      *
      * 澄清机制保护回答质量：范围不清时先问清楚，比误选文档后编造答案更安全。
      */
-    private boolean shouldAskClarification(KnowledgeRouteDecision routeDecision,
-                                           List<DocumentRouteCandidate> candidateDocuments) {
+    boolean shouldAskClarification(KnowledgeRouteDecision routeDecision,
+                                   List<DocumentRouteCandidate> candidateDocuments) {
         if (!properties.isClarificationEnabled() || properties.isForceRetrievalMode()) {
             return false;
         }
@@ -719,11 +835,8 @@ public class ChatPreparationOrchestrator {
         if (candidateDocuments == null || candidateDocuments.isEmpty()) {
             return true;
         }
-        if (routeDecision == null || routeDecision.getDocuments() == null || routeDecision.getDocuments().isEmpty()) {
-            return true;
-        }
-        if (routeDecision.getConfidence() == null || routeDecision.getConfidence().doubleValue() < 0.55D) {
-            return true;
+        if (EXPLICIT_DOCUMENT_REASON.equals(candidateDocuments.get(0).getReason())) {
+            return false;
         }
         if (candidateDocuments.size() < 2) {
             return false;

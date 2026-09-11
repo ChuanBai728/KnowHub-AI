@@ -194,9 +194,20 @@ public class ChatRagProperties {
     private boolean forceRetrievalMode = false;
 
     /**
+     * 强制检索时是否使用全部可检索文档作为检索范围。
+     * 仅建议在离线评测中开启，用于测量不受知识路由截断影响的纯检索能力。
+     */
+    private boolean forceRetrievalFullCorpus = false;
+
+    /**
      * 自动知识路由保留的候选文档数。评测模式建议放大到 20，降低过早收缩导致的漏召回。
      */
     private int routeDocumentTopK = 20;
+
+    /**
+     * 自动路由置信度不足时保留的候选文档数。扩大候选后继续检索，避免仅因低置信度过早澄清。
+     */
+    private int lowConfidenceRouteDocumentTopK = 100;
 
     /**
      * 是否在 Rerank 后的最终证据选择阶段限制单文档证据数量，避免同一文档占满 TopK。

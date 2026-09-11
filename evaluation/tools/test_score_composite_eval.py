@@ -48,6 +48,30 @@ class CompositeScoreTest(unittest.TestCase):
         self.assertEqual(0.5, row["fact_recall"])
         self.assertEqual(0.0, row["answer_pass"])
 
+    def test_reports_route_and_full_corpus_retrieval_separately(self):
+        gold = {
+            "question_id": "T2-test",
+            "component": "t2retrieval",
+            "question_type": "retrieval",
+            "expected_doc_ids": ["doc-gold"],
+            "allowed_execution_modes": ["RETRIEVAL"],
+            "answer_facts": [],
+        }
+        observation = {
+            "answer": "ok",
+            "answer_status": "COMPLETED",
+            "route_document_ids": ["doc-other"],
+            "retrieved_document_ids": ["doc-gold"],
+            "exchange_detail": {
+                "stageTraces": [{"snapshot": {"fullCorpusRetrieval": True}}]
+            },
+        }
+
+        row = score_case(gold, observation, {})
+        self.assertEqual("FULL_CORPUS", row["retrieval_scope"])
+        self.assertEqual(0.0, row["route_recall@20"])
+        self.assertEqual(1.0, row["recall@10"])
+
 
 if __name__ == "__main__":
     unittest.main()

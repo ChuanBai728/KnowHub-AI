@@ -86,6 +86,9 @@ public class DocumentStructureSignalExtractor {
     /** 表格分隔符正则 */
     private static final Pattern TABLE_SPLIT_PATTERN = Pattern.compile("\\|");
 
+    /** Markdown 围栏代码块边界，例如 ```bash 或 ~~~yaml。 */
+    private static final Pattern FENCED_CODE_BOUNDARY_PATTERN = Pattern.compile("^(?:`{3,}|~{3,}).*$");
+
     // ==================== 依赖注入 ====================
 
     /** 文档管理配置属性 */
@@ -134,9 +137,44 @@ public class DocumentStructureSignalExtractor {
                 .build());
         }
 
-        // 遍历所有逻辑行，逐行分类
+        // 遍历所有逻辑行，逐行分类。代码块中的命令、编号和注释只能作为正文，不能污染章节树。
+        boolean inFencedCodeBlock = false;
         for (int index = 0; index < logicalLines.size(); index++) {
             DocumentStructureLogicalLine logicalLine = logicalLines.get(index);
+            String normalized = logicalLine.normalizedText();
+            if (FENCED_CODE_BOUNDARY_PATTERN.matcher(normalized).matches()) {
+                signals.add(signal(
+                    logicalLine.lineNo(),
+                    logicalLine.rawText(),
+                    normalized,
+                    logicalLine.indentLevel(),
+                    DocumentStructureSignalKind.NOISE,
+                    "",
+                    "",
+                    0,
+                    null,
+                    List.of("fenced-code-boundary"),
+                    1.0D
+                ));
+                inFencedCodeBlock = !inFencedCodeBlock;
+                continue;
+            }
+            if (inFencedCodeBlock) {
+                signals.add(signal(
+                    logicalLine.lineNo(),
+                    logicalLine.rawText(),
+                    normalized,
+                    logicalLine.indentLevel(),
+                    DocumentStructureSignalKind.BODY,
+                    "",
+                    normalized,
+                    null,
+                    null,
+                    List.of("fenced-code-content"),
+                    1.0D
+                ));
+                continue;
+            }
             LineContext context = buildContext(logicalLines, index);
             signals.add(classify(normalizedTitle, logicalLine, context, lineFrequency));
         }

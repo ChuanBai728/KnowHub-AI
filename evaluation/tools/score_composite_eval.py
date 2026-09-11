@@ -167,6 +167,16 @@ def execution_mode(observation: dict[str, Any]) -> str:
     return ""
 
 
+def retrieval_scope(observation: dict[str, Any]) -> str:
+    detail = observation.get("exchange_detail") or {}
+    for stage in detail.get("stageTraces") or []:
+        snapshot = stage.get("snapshot") or {}
+        value = snapshot.get("fullCorpusRetrieval")
+        if value is True or str(value).lower() == "true":
+            return "FULL_CORPUS"
+    return "ROUTE_CANDIDATES"
+
+
 def reference_document_ids(observation: dict[str, Any], runtime_to_official: dict[str, str]) -> list[str]:
     references = nested(observation, "exchange_detail", "exchange", "references") or []
     result = []
@@ -188,6 +198,7 @@ def score_case(gold: dict[str, Any], observation: dict[str, Any] | None,
     expected = unique(str(item) for item in gold.get("expected_doc_ids") or [])
     retrieved = unique(str(item) for item in observation.get("retrieved_document_ids") or [])
     selected = unique(str(item) for item in observation.get("selected_document_ids") or [])
+    routed = unique(str(item) for item in observation.get("route_document_ids") or [])
     allowed_modes = [normalize_mode(item) for item in gold.get("allowed_execution_modes") or []]
     retrieval_expected = bool(expected) and any(
         mode in {"RETRIEVAL", "GRAPH_THEN_EVIDENCE"} for mode in allowed_modes
@@ -211,6 +222,9 @@ def score_case(gold: dict[str, Any], observation: dict[str, Any] | None,
         "question_type": gold.get("question_type", "unknown"),
         "completed": completed,
         "retrieval_expected": retrieval_expected,
+        "retrieval_scope": retrieval_scope(observation),
+        "route_recall@20": metric_recall(expected, routed, 20) if retrieval_expected else None,
+        "route_hit@20": metric_hit(expected, routed, 20) if retrieval_expected else None,
         "recall@5": metric_recall(expected, retrieved, 5) if retrieval_expected else None,
         "recall@10": metric_recall(expected, retrieved, 10) if retrieval_expected else None,
         "recall@20": metric_recall(expected, retrieved, 20) if retrieval_expected else None,
@@ -243,6 +257,8 @@ def selected(rows: list[dict[str, Any]], key: str) -> list[float]:
 
 def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     retrieval = [row for row in rows if row["retrieval_expected"]]
+    full_corpus_retrieval = [row for row in retrieval if row["retrieval_scope"] == "FULL_CORPUS"]
+    route_scoped_retrieval = [row for row in retrieval if row["retrieval_scope"] == "ROUTE_CANDIDATES"]
     answer = [row for row in rows if row["answer_scored"]]
     citations = [row for row in rows if row["citation_required"]]
     abstentions = [row for row in rows if row["should_abstain"]]
@@ -255,12 +271,18 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "completed": sum(row["completed"] for row in rows),
         "completion_rate": mean(float(row["completed"]) for row in rows),
         "retrieval_cases": len(retrieval),
+        "route_recall@20": mean(selected(retrieval, "route_recall@20")),
+        "route_hit@20": mean(selected(retrieval, "route_hit@20")),
         "hit@5": mean(selected(retrieval, "hit@5")),
         "recall@5": mean(selected(retrieval, "recall@5")),
         "recall@10": mean(selected(retrieval, "recall@10")),
         "recall@20": mean(selected(retrieval, "recall@20")),
         "mrr@10": mean(selected(retrieval, "mrr@10")),
         "final_recall@5": mean(selected(retrieval, "final_recall@5")),
+        "full_corpus_retrieval_cases": len(full_corpus_retrieval),
+        "full_corpus_recall@10": mean(selected(full_corpus_retrieval, "recall@10")),
+        "route_scoped_retrieval_cases": len(route_scoped_retrieval),
+        "route_scoped_recall@10": mean(selected(route_scoped_retrieval, "recall@10")),
         "answer_cases": len(answer),
         "fact_recall": mean(selected(answer, "fact_recall")),
         "answer_pass_rate": mean(selected(answer, "answer_pass")),
@@ -322,7 +344,10 @@ def write_markdown(path: Path, result: dict[str, Any]) -> None:
         )
     lines.extend([
         "", "## 总体关键指标", "",
+        f"- 路由候选 Recall@20 / Hit@20：{fmt(overall['route_recall@20'])} / {fmt(overall['route_hit@20'])}",
         f"- Hit@5 / Recall@10 / MRR@10：{fmt(overall['hit@5'])} / {fmt(overall['recall@10'])} / {fmt(overall['mrr@10'])}",
+        f"- 全语料检索 Recall@10：{fmt(overall['full_corpus_recall@10'])}（{overall['full_corpus_retrieval_cases']} 题）",
+        f"- 路由限域检索 Recall@10：{fmt(overall['route_scoped_recall@10'])}（{overall['route_scoped_retrieval_cases']} 题）",
         f"- 最终证据 Recall@5：{fmt(overall['final_recall@5'])}",
         f"- 事实覆盖率 / 答案通过率：{fmt(overall['fact_recall'])} / {fmt(overall['answer_pass_rate'])}",
         f"- 严格事实覆盖率 / 严格答案通过率：{fmt(overall['strict_fact_recall'])} / {fmt(overall['strict_answer_pass_rate'])}",

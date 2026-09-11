@@ -1,0 +1,144 @@
+package ai.knowhub.chat.rag.service;
+
+import ai.knowhub.chat.rag.config.ChatRagProperties;
+import ai.knowhub.document.model.KnowledgeDocumentDescriptor;
+import ai.knowhub.document.model.route.DocumentRouteCandidate;
+import ai.knowhub.document.model.route.KnowledgeRouteDecision;
+import ai.knowhub.document.service.DocumentKnowledgeService;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import java.math.BigDecimal;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+class ChatPreparationOrchestratorTest {
+
+    private ChatRagProperties properties;
+    private DocumentKnowledgeService documentKnowledgeService;
+    private ChatPreparationOrchestrator orchestrator;
+
+    @BeforeEach
+    void setUp() {
+        properties = new ChatRagProperties();
+        properties.setRouteDocumentTopK(1);
+        properties.setLowConfidenceRouteDocumentTopK(3);
+        documentKnowledgeService = mock(DocumentKnowledgeService.class);
+        when(documentKnowledgeService.listRetrievableDocuments()).thenReturn(List.of(
+            descriptor(1L, "Kubernetes 调度器配置", 101L, "platform"),
+            descriptor(2L, "Dubbo 注册中心参考", 102L, "platform"),
+            descriptor(3L, "采购审批制度", 103L, "finance")
+        ));
+        orchestrator = new ChatPreparationOrchestrator(
+            properties, null, null, null, null, null, documentKnowledgeService
+        );
+    }
+
+    @Test
+    void lowConfidenceExpandsCandidatesInsteadOfKeepingNormalTopK() {
+        KnowledgeRouteDecision decision = decision(
+            new BigDecimal("0.30"),
+            candidate("2", "Dubbo 注册中心参考", "102", "platform", 8)
+        );
+
+        List<DocumentRouteCandidate> candidates = orchestrator.selectAutoCandidates(
+            decision, "注册中心如何配置", "注册中心如何配置"
+        );
+
+        assertEquals(3, candidates.size());
+    }
+
+    @Test
+    void explicitDocumentNameTakesPriorityAndDoesNotClarify() {
+        KnowledgeRouteDecision decision = decision(
+            new BigDecimal("0.20"),
+            candidate("3", "采购审批制度", "103", "finance", 10)
+        );
+
+        List<DocumentRouteCandidate> candidates = orchestrator.selectAutoCandidates(
+            decision,
+            "请根据《Kubernetes 调度器配置》说明步骤",
+            "Kubernetes 调度器配置步骤"
+        );
+
+        assertEquals("1", candidates.get(0).getDocumentId());
+        assertFalse(orchestrator.shouldAskClarification(decision, candidates));
+    }
+
+    @Test
+    void lowConfidenceWithinOneScopeContinuesRetrieval() {
+        KnowledgeRouteDecision decision = decision(
+            new BigDecimal("0.20"),
+            candidate("1", "文档甲", "101", "platform", 10),
+            candidate("2", "文档乙", "102", "platform", 9)
+        );
+
+        assertFalse(orchestrator.shouldAskClarification(decision, decision.getDocuments()));
+    }
+
+    @Test
+    void closeCandidatesAcrossScopesStillClarify() {
+        KnowledgeRouteDecision decision = decision(
+            new BigDecimal("0.20"),
+            candidate("1", "文档甲", "101", "platform", 10),
+            candidate("3", "文档乙", "103", "finance", 9)
+        );
+
+        assertTrue(orchestrator.shouldAskClarification(decision, decision.getDocuments()));
+    }
+
+    @Test
+    void fullCorpusCandidatesContainEveryRetrievableDocument() {
+        List<DocumentRouteCandidate> candidates = orchestrator.fullCorpusCandidates();
+
+        assertEquals(List.of("1", "2", "3"), candidates.stream()
+            .map(DocumentRouteCandidate::getDocumentId)
+            .toList());
+    }
+
+    @Test
+    void titleMatchingHandlesVendorPrefixAndNaturalTitleVariants() {
+        assertTrue(orchestrator.explicitDocumentTitleScore(
+            "Apache Dubbo 服务发现", "Dubbo 服务发现文档中介绍了什么"
+        ) > 0D);
+        assertTrue(orchestrator.explicitDocumentTitleScore(
+            "调试运行中的 Pod", "调试运行中 Pod 的文档里日志命令在哪"
+        ) > 0D);
+        assertTrue(orchestrator.explicitDocumentTitleScore(
+            "部署 Dubbo 应用到 Kubernetes", "Dubbo Kubernetes 部署文档"
+        ) > 0D);
+        assertEquals(0D, orchestrator.explicitDocumentTitleScore(
+            "采购审批制度", "Kubernetes ConfigMap 如何使用"
+        ));
+    }
+
+    private KnowledgeDocumentDescriptor descriptor(long documentId,
+                                                   String name,
+                                                   long taskId,
+                                                   String scope) {
+        return new KnowledgeDocumentDescriptor(documentId, name, taskId, scope, scope, "", "");
+    }
+
+    private KnowledgeRouteDecision decision(BigDecimal confidence,
+                                            DocumentRouteCandidate... candidates) {
+        KnowledgeRouteDecision decision = new KnowledgeRouteDecision();
+        decision.setConfidence(confidence);
+        decision.setDocuments(List.of(candidates));
+        return decision;
+    }
+
+    private DocumentRouteCandidate candidate(String documentId,
+                                             String name,
+                                             String taskId,
+                                             String scope,
+                                             int score) {
+        return new DocumentRouteCandidate(
+            documentId, name, taskId, scope, scope, "", "", BigDecimal.valueOf(score), "route"
+        );
+    }
+}

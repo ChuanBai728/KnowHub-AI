@@ -100,7 +100,7 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
     private static final int ROUTE_EMBEDDING_CACHE_MAX_SIZE = 20_000;
 
     /** 自动知识路由默认保留的文档候选数，避免过早收缩导致 gold document 被截断。 */
-    private static final int ROUTE_DOCUMENT_CANDIDATE_LIMIT = 20;
+    private static final int ROUTE_DOCUMENT_CANDIDATE_LIMIT = 100;
 
     /** 文档 Mapper */
     private final KnowHubDocumentMapper documentMapper;

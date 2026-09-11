@@ -230,7 +230,14 @@ public class DocumentQuestionRouter {
      * 章节答案目标词——当问题问"哪一节/哪个章节"等目标时，歧义方向词可以提升为高置信相邻章节判断。
      */
     private static final List<String> GRAPH_ONLY_ADJACENCY_ANSWER_HINTS = List.of(
-        "哪一节", "哪一章", "哪个章节", "哪个小节", "哪个标题", "哪部分", "哪块"
+        "哪一节", "哪一章", "哪个章节", "哪个一级章节", "哪个二级章节",
+        "哪一个章节", "哪一个一级章节", "哪一个二级章节",
+        "哪个小节", "哪个标题", "哪部分", "哪块"
+    );
+
+    /** 内容所在章节的明确问法，应返回结构位置而不是按普通正文问题处理。 */
+    private static final List<String> GRAPH_ONLY_LOCATION_QUERY_HINTS = List.of(
+        "位于哪", "在哪个章节", "在哪一章", "在哪一节", "属于哪个章节", "章节位置"
     );
 
     // ==================== 依赖注入 ====================
@@ -545,7 +552,17 @@ public class DocumentQuestionRouter {
                 "rule-quoted-title-direction"
             );
         }
-        // 规则 4：代词 + 方向词 + 章节答案目标
+        // 规则 4：明确询问某段内容位于哪个章节
+        if (looksStructureLocationQuestion(question)) {
+            return new GraphOnlyIntentDecision(
+                true,
+                DocumentNavigationAction.SECTION_ADJACENCY_LOOKUP,
+                "命中内容所在章节问法，直接通过结构图定位章节。",
+                0.95D,
+                "rule-section-location"
+            );
+        }
+        // 规则 5：代词 + 方向词 + 章节答案目标
         if (containsAny(question, GRAPH_ONLY_PRONOUN_ANCHOR_HINTS)
             && containsAny(question, GRAPH_ONLY_DIRECTION_HINTS)
             && containsAny(question, GRAPH_ONLY_ADJACENCY_ANSWER_HINTS)) {
@@ -557,7 +574,7 @@ public class DocumentQuestionRouter {
                 "rule-pronoun-direction-answer"
             );
         }
-        // 规则 5：结构对象 + 方向关系组合
+        // 规则 6：结构对象 + 方向关系组合
         if (containsAny(question, GRAPH_ONLY_STRUCTURE_OBJECT_HINTS)
             && containsAny(question, GRAPH_ONLY_EXPLICIT_ADJACENCY_HINTS)) {
             return new GraphOnlyIntentDecision(
@@ -568,7 +585,7 @@ public class DocumentQuestionRouter {
                 "rule-structure-direction"
             );
         }
-        // 规则 6：明确目录展开表达
+        // 规则 7：明确目录展开表达
         if (asksOutline(question)) {
             return new GraphOnlyIntentDecision(
                 true,
@@ -578,7 +595,7 @@ public class DocumentQuestionRouter {
                 "rule-outline-hint"
             );
         }
-        // 规则 7：章节锚点 + 目录展开动作
+        // 规则 8：章节锚点 + 目录展开动作
         if (hasGraphOnlyAnchor(question) && containsAny(question, GRAPH_ONLY_OUTLINE_ACTION_HINTS)) {
             return new GraphOnlyIntentDecision(
                 true,
@@ -606,7 +623,14 @@ public class DocumentQuestionRouter {
 
     /** 判断是否为正文内容问题（需要证据，不适合图直答） */
     private boolean looksGraphOnlyExcludedContentQuestion(String question) {
-        return containsAny(question, GRAPH_ONLY_CONTENT_HINTS);
+        return containsAny(question, GRAPH_ONLY_CONTENT_HINTS)
+            && !looksStructureLocationQuestion(question);
+    }
+
+    private boolean looksStructureLocationQuestion(String question) {
+        String normalized = safeText(question);
+        return containsAny(normalized, GRAPH_ONLY_ADJACENCY_ANSWER_HINTS)
+            && containsAny(normalized, GRAPH_ONLY_LOCATION_QUERY_HINTS);
     }
 
     /** 构建统一的问题意图判断结果 */
