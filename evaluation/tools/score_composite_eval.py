@@ -61,12 +61,61 @@ def fact_choices(fact: Any) -> list[str]:
     return [text] if text else []
 
 
-def fact_matched(fact: Any, answer: str) -> bool:
+def strict_fact_matched(fact: Any, answer: str) -> bool:
     normalized_answer = normalize_text(answer)
     return any(
         normalize_text(choice) and normalize_text(choice) in normalized_answer
         for choice in fact_choices(fact)
     )
+
+
+def bounded_subsequence(needle: str, haystack: str) -> bool:
+    """Allow short explanatory insertions without accepting arbitrarily scattered characters."""
+    if len(needle) < 3 or len(needle) > len(haystack):
+        return False
+    max_span = max(len(needle) * 4, len(needle) + 12)
+    for start, char in enumerate(haystack):
+        if char != needle[0]:
+            continue
+        cursor = start + 1
+        for expected in needle[1:]:
+            cursor = haystack.find(expected, cursor)
+            if cursor < 0:
+                break
+            cursor += 1
+        else:
+            if cursor - start <= max_span:
+                return True
+    return False
+
+
+def fact_matched(fact: Any, answer: str) -> bool:
+    normalized_answer = normalize_text(answer)
+    for choice in fact_choices(fact):
+        normalized_choice = normalize_text(choice)
+        if not normalized_choice:
+            continue
+        if normalized_choice in normalized_answer:
+            return True
+        if bounded_subsequence(normalized_choice, normalized_answer):
+            return True
+    return False
+
+
+def answer_fact_groups(gold: dict[str, Any]) -> list[list[Any]]:
+    """Return AND-ed fact groups whose members are equivalent OR-ed answer aliases."""
+    explicit_groups = gold.get("answer_fact_groups") or []
+    if explicit_groups:
+        return [list(group) for group in explicit_groups if group]
+    facts = list(gold.get("answer_facts") or [])
+    if gold.get("component") == "cmrc2018" and facts:
+        return [facts]
+    return [[fact] for fact in facts]
+
+
+def matched_groups(groups: list[list[Any]], answer: str, *, strict: bool = False) -> int:
+    matcher = strict_fact_matched if strict else fact_matched
+    return sum(any(matcher(choice, answer) for choice in group) for group in groups)
 
 
 def metric_recall(expected: list[str], retrieved: list[str], k: int) -> float:
@@ -143,8 +192,9 @@ def score_case(gold: dict[str, Any], observation: dict[str, Any] | None,
     retrieval_expected = bool(expected) and any(
         mode in {"RETRIEVAL", "GRAPH_THEN_EVIDENCE"} for mode in allowed_modes
     )
-    facts = list(gold.get("answer_facts") or [])
-    fact_hits = sum(fact_matched(fact, answer) for fact in facts) if completed else 0
+    fact_groups = answer_fact_groups(gold)
+    fact_hits = matched_groups(fact_groups, answer) if completed else 0
+    strict_fact_hits = matched_groups(fact_groups, answer, strict=True) if completed else 0
     cited_documents = reference_document_ids(observation, runtime_to_official)
     citation_markers = bool(re.search(r"\[\d+\]", answer))
     citation_present = bool(cited_documents or citation_markers)
@@ -167,9 +217,11 @@ def score_case(gold: dict[str, Any], observation: dict[str, Any] | None,
         "hit@5": metric_hit(expected, retrieved, 5) if retrieval_expected else None,
         "mrr@10": metric_mrr(expected, retrieved, 10) if retrieval_expected else None,
         "final_recall@5": metric_recall(expected, selected, 5) if retrieval_expected else None,
-        "answer_scored": bool(facts),
-        "fact_recall": fact_hits / len(facts) if facts else None,
-        "answer_pass": float(fact_hits == len(facts)) if facts else None,
+        "answer_scored": bool(fact_groups),
+        "fact_recall": fact_hits / len(fact_groups) if fact_groups else None,
+        "answer_pass": float(fact_hits == len(fact_groups)) if fact_groups else None,
+        "strict_fact_recall": strict_fact_hits / len(fact_groups) if fact_groups else None,
+        "strict_answer_pass": float(strict_fact_hits == len(fact_groups)) if fact_groups else None,
         "citation_required": bool(gold.get("citation_required")),
         "citation_present": float(citation_present),
         "citation_grounded": float(bool(set(expected) & set(cited_documents))),
@@ -212,6 +264,8 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "answer_cases": len(answer),
         "fact_recall": mean(selected(answer, "fact_recall")),
         "answer_pass_rate": mean(selected(answer, "answer_pass")),
+        "strict_fact_recall": mean(selected(answer, "strict_fact_recall")),
+        "strict_answer_pass_rate": mean(selected(answer, "strict_answer_pass")),
         "citation_cases": len(citations),
         "citation_presence_rate": mean(selected(citations, "citation_present")),
         "grounded_citation_rate": mean(selected(citations, "citation_grounded")),
@@ -270,7 +324,8 @@ def write_markdown(path: Path, result: dict[str, Any]) -> None:
         "", "## 总体关键指标", "",
         f"- Hit@5 / Recall@10 / MRR@10：{fmt(overall['hit@5'])} / {fmt(overall['recall@10'])} / {fmt(overall['mrr@10'])}",
         f"- 最终证据 Recall@5：{fmt(overall['final_recall@5'])}",
-        f"- 事实覆盖率 / 答案全通过率：{fmt(overall['fact_recall'])} / {fmt(overall['answer_pass_rate'])}",
+        f"- 事实覆盖率 / 答案通过率：{fmt(overall['fact_recall'])} / {fmt(overall['answer_pass_rate'])}",
+        f"- 严格事实覆盖率 / 严格答案通过率：{fmt(overall['strict_fact_recall'])} / {fmt(overall['strict_answer_pass_rate'])}",
         f"- 引用出现率 / 正确文档引用率：{fmt(overall['citation_presence_rate'])} / {fmt(overall['grounded_citation_rate'])}",
         f"- 拒答通过率 / 禁止事实规避率：{fmt(overall['abstention_pass_rate'])} / {fmt(overall['forbidden_claim_avoidance_rate'])}",
         f"- 路由准确率 / 澄清召回率：{fmt(overall['route_accuracy'])} / {fmt(overall['clarification_recall'])}",

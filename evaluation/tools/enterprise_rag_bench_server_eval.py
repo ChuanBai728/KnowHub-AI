@@ -580,6 +580,17 @@ def replay_conversation(client: KnowHubClient, question: dict[str, Any], convers
             build_chat_payload(question, conversation_id, official_to_runtime, content),
             timeout=chat_timeout,
         )
+        session = wait_for_chat_terminal_status(
+            client,
+            conversation_id,
+            timeout_seconds=chat_timeout,
+        )
+        status = str(session.get("latestTurnStatus") or "UNKNOWN").upper()
+        if status != "COMPLETED":
+            error = str(session.get("latestTurnError") or status)
+            raise RuntimeError(
+                f"Conversation replay turn did not complete for {question['question_id']}: {error}"
+            )
         replayed += 1
     return replayed
 

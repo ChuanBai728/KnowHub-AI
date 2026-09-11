@@ -65,4 +65,6 @@ evaluation/tools/*
 !evaluation/tools/build_composite_eval.py
 !evaluation/tools/validate_composite_eval.py
 !evaluation/tools/test_composite_eval.py
+!evaluation/tools/score_composite_eval.py
+!evaluation/tools/test_score_composite_eval.py
 
