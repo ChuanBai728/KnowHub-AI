@@ -32,7 +32,8 @@ class ChatPreparationOrchestratorTest {
         when(documentKnowledgeService.listRetrievableDocuments()).thenReturn(List.of(
             descriptor(1L, "Kubernetes 调度器配置", 101L, "platform"),
             descriptor(2L, "Dubbo 注册中心参考", 102L, "platform"),
-            descriptor(3L, "采购审批制度", 103L, "finance")
+            descriptor(3L, "采购审批制度", 103L, "finance"),
+            descriptor(4L, "Kubernetes Secret", 104L, "platform")
         ));
         orchestrator = new ChatPreparationOrchestrator(
             properties, null, null, null, null, null, documentKnowledgeService
@@ -67,7 +68,7 @@ class ChatPreparationOrchestratorTest {
         );
 
         assertEquals("1", candidates.get(0).getDocumentId());
-        assertFalse(orchestrator.shouldAskClarification(decision, candidates));
+        assertFalse(orchestrator.shouldAskClarification(decision, candidates, "请根据 Kubernetes 调度器配置说明步骤"));
     }
 
     @Test
@@ -78,7 +79,7 @@ class ChatPreparationOrchestratorTest {
             candidate("2", "文档乙", "102", "platform", 9)
         );
 
-        assertFalse(orchestrator.shouldAskClarification(decision, decision.getDocuments()));
+        assertFalse(orchestrator.shouldAskClarification(decision, decision.getDocuments(), "注册中心默认端口是多少"));
     }
 
     @Test
@@ -89,16 +90,64 @@ class ChatPreparationOrchestratorTest {
             candidate("3", "文档乙", "103", "finance", 9)
         );
 
-        assertTrue(orchestrator.shouldAskClarification(decision, decision.getDocuments()));
+        assertTrue(orchestrator.shouldAskClarification(decision, decision.getDocuments(), "默认端口是多少"));
     }
 
     @Test
     void fullCorpusCandidatesContainEveryRetrievableDocument() {
         List<DocumentRouteCandidate> candidates = orchestrator.fullCorpusCandidates();
 
-        assertEquals(List.of("1", "2", "3"), candidates.stream()
+        assertEquals(List.of("1", "2", "3", "4"), candidates.stream()
             .map(DocumentRouteCandidate::getDocumentId)
             .toList());
+    }
+
+    @Test
+    void lowConfidenceBroadDiagnosticQuestionStillClarifies() {
+        KnowledgeRouteDecision decision = decision(
+            new BigDecimal("0.20"),
+            candidate("1", "文档甲", "101", "platform", 10),
+            candidate("2", "文档乙", "102", "platform", 9)
+        );
+
+        assertTrue(orchestrator.shouldAskClarification(
+            decision,
+            decision.getDocuments(),
+            "Pod 有问题，我该怎么调试？"
+        ));
+    }
+
+    @Test
+    void contextualFollowUpDoesNotClarifyAgain() {
+        KnowledgeRouteDecision decision = decision(
+            new BigDecimal("0.20"),
+            candidate("1", "文档甲", "101", "platform", 10),
+            candidate("2", "文档乙", "102", "platform", 9)
+        );
+
+        assertFalse(orchestrator.shouldAskClarification(
+            decision,
+            decision.getDocuments(),
+            "不想自己做这种编码转换时该用哪个字段？",
+            true
+        ));
+    }
+
+    @Test
+    void routingHistoryPromotesUniquelyNamedTechnicalDocument() {
+        KnowledgeRouteDecision decision = decision(
+            new BigDecimal("0.20"),
+            candidate("2", "Dubbo 注册中心参考", "102", "platform", 10)
+        );
+
+        List<DocumentRouteCandidate> candidates = orchestrator.selectAutoCandidates(
+            decision,
+            "不想自己做这种编码转换时该用哪个字段？",
+            "不想自己做这种编码转换时该用哪个字段？",
+            "用户：Secret 的 data 字段值需要采用 base64 编码。"
+        );
+
+        assertEquals("4", candidates.get(0).getDocumentId());
     }
 
     @Test
@@ -111,6 +160,12 @@ class ChatPreparationOrchestratorTest {
         ) > 0D);
         assertTrue(orchestrator.explicitDocumentTitleScore(
             "部署 Dubbo 应用到 Kubernetes", "Dubbo Kubernetes 部署文档"
+        ) > 0D);
+        assertTrue(orchestrator.explicitDocumentTitleScore(
+            "Kubernetes ConfigMap", "ConfigMap 以环境变量方式注入 Pod"
+        ) > 0D);
+        assertTrue(orchestrator.explicitDocumentTitleScore(
+            "Kubernetes Secret", "Secret 的 stringData 字段"
         ) > 0D);
         assertEquals(0D, orchestrator.explicitDocumentTitleScore(
             "采购审批制度", "Kubernetes ConfigMap 如何使用"

@@ -2,6 +2,8 @@ package ai.knowhub.chat.rag.executor;
 
 import cn.hutool.core.util.StrUtil;
 import lombok.extern.slf4j.Slf4j;
+import ai.knowhub.chat.model.RetrievalResultVo;
+import ai.knowhub.chat.model.SearchReference;
 import ai.knowhub.chat.model.trace.ConversationTraceStageCode;
 import ai.knowhub.chat.rag.model.ConversationExecutionPlan;
 import ai.knowhub.chat.rag.model.DocumentNavigationDecision;
@@ -16,6 +18,7 @@ import ai.knowhub.document.model.graph.GraphQueryResult;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
@@ -148,6 +151,7 @@ public class GraphThenEvidenceExecutor implements ConversationExecutor {
 
         // 把图查询结果渲染成文本答案
         String answer = graphAnswerRenderer.renderGraphAnswer(mode(), decision, graphResult);
+        recordGraphEvidence(taskInfo, plan, graphResult);
         log.info("GRAPH_THEN_EVIDENCE 执行完成: documentId={}, sectionNodeId={}, targetSection='{}', targetItemIndex={}, answerLength={}",
             plan.getSelectedDocumentId(),
             decision.getStructureAnchor().getStructureNodeId(),
@@ -167,6 +171,79 @@ public class GraphThenEvidenceExecutor implements ConversationExecutor {
 
         // 返回答案。如果答案为空则返回兜底话术
         return Flux.fromIterable(answer.isBlank() ? List.of(StrUtil.blankToDefault(plan.getNoEvidenceReply(), "当前没有足够证据支持明确回答。")) : List.of(answer));
+    }
+
+    /**
+     * 将图谱取证写入统一引用列表和检索观测表。
+     * GRAPH_THEN_EVIDENCE 虽然不经过向量/关键词通道，但它同样完成了一次可溯源的文档取证；
+     * 若不记录，引用面板与 Recall 指标都会把正确的图谱命中误判为无召回。
+     */
+    void recordGraphEvidence(TaskInfo taskInfo,
+                             ConversationExecutionPlan plan,
+                             GraphQueryResult graphResult) {
+        if (taskInfo == null || plan == null || graphResult == null || graphResult.getTargetSection() == null) {
+            return;
+        }
+        var section = graphResult.getTargetSection();
+        Long documentId = section.getDocumentId() == null ? plan.getSelectedDocumentId() : section.getDocumentId();
+        String documentName = StrUtil.blankToDefault(plan.getSelectedDocumentName(), section.getTitle());
+        String sectionPath = StrUtil.blankToDefault(section.getSectionPath(), section.displayTitle());
+        String evidenceText = graphEvidenceText(graphResult);
+        String preview = evidenceText.length() > 500 ? evidenceText.substring(0, 500) : evidenceText;
+
+        SearchReference reference = new SearchReference();
+        reference.setReferenceId("graph-" + section.getNodeId());
+        reference.setSourceType("DOCUMENT");
+        reference.setTitle(documentName);
+        reference.setSnippet(preview);
+        reference.setDocumentId(documentId);
+        reference.setDocumentName(documentName);
+        reference.setSectionPath(sectionPath);
+        reference.setStructureNodeId(section.getNodeId());
+        reference.setCanonicalPath(section.getCanonicalPath());
+        reference.setScore(1.0D);
+        reference.setSubQuestionIndex(1);
+        reference.setSubQuestion(plan.getOriginalQuestion());
+        reference.setChannel("graph");
+        taskInfo.references().add(reference);
+        taskInfo.usedTools().add("graph");
+
+        if (taskInfo.traceRecorder() == null) {
+            return;
+        }
+        RetrievalResultVo observation = new RetrievalResultVo();
+        observation.setTraceId(taskInfo.traceId());
+        observation.setSubQuestionIndex(1);
+        observation.setSubQuestion(plan.getOriginalQuestion());
+        observation.setChannelType("graph");
+        observation.setChannelRank(1);
+        observation.setRrfRank(1);
+        observation.setFinalRank(1);
+        observation.setOriginalScore(BigDecimal.ONE);
+        observation.setRrfScore(BigDecimal.ONE);
+        observation.setRerankScore(BigDecimal.ONE);
+        observation.setGatePassed(true);
+        observation.setSelected(true);
+        observation.setSelectionReason("结构图定位并选中章节证据");
+        observation.setDocumentId(documentId);
+        observation.setDocumentName(documentName);
+        observation.setSectionPath(sectionPath);
+        observation.setChunkTextPreview(preview);
+        observation.setChunkCharCount(evidenceText.length());
+        taskInfo.traceRecorder().recordRetrievalResults(List.of(observation));
+    }
+
+    private String graphEvidenceText(GraphQueryResult graphResult) {
+        if (graphResult.getTargetItem() != null && StrUtil.isNotBlank(graphResult.getTargetItem().displayText())) {
+            return graphResult.getTargetItem().displayText();
+        }
+        if (graphResult.getTargetSection() != null && StrUtil.isNotBlank(graphResult.getTargetSection().getContentText())) {
+            return graphResult.getTargetSection().getContentText();
+        }
+        if (graphResult.getMatchedItems() != null && !graphResult.getMatchedItems().isEmpty()) {
+            return StrUtil.blankToDefault(graphResult.getMatchedItems().get(0).displayText(), "");
+        }
+        return "";
     }
 
     /**

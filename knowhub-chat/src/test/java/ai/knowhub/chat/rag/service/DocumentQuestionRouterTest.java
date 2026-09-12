@@ -100,4 +100,45 @@ class DocumentQuestionRouterTest {
         verify(graphService).findSectionByTitle(10L, "账号生命周期");
         verify(graphService).listSections(10L);
     }
+
+    @Test
+    void routesContextualContentFollowUpThroughGraphThenEvidence() {
+        DocumentStructureGraphService graphService = mock(DocumentStructureGraphService.class);
+        GraphSection section = GraphSection.builder()
+            .nodeId(301L)
+            .documentId(10L)
+            .title("创建 Secret")
+            .sectionPath("使用 Secret > 创建 Secret")
+            .contentText("可以使用 stringData 字段提供任意字符串。")
+            .build();
+        when(graphService.listSections(10L)).thenReturn(List.of());
+        String question = "不想自己做这种编码转换时该用哪个字段？";
+        String history = "用户：Secret 的 data 字段值需要采用什么编码？\n"
+            + "助手：Docker 示例很多，但可以使用 `stringData` 避免手动执行 Base64 转换。";
+        String contextualQuestion = "data stringData base64";
+        when(graphService.findBestSection(10L, contextualQuestion, "")).thenReturn(section);
+
+        @SuppressWarnings("unchecked")
+        ObjectProvider<DocumentNavigationIndexService> navigationIndexProvider = mock(ObjectProvider.class);
+        DocumentQuestionRouter router = new DocumentQuestionRouter(
+            graphService,
+            navigationIndexProvider,
+            mock(ObservedChatModelService.class),
+            mock(PromptTemplateService.class),
+            new ObjectMapper()
+        );
+
+        DocumentNavigationDecision decision = router.route(
+            10L,
+            question,
+            new RagRewriteResult(question, List.of(question)),
+            true,
+            history
+        );
+
+        assertThat(decision.getExecutionMode()).isEqualTo(ExecutionMode.GRAPH_THEN_EVIDENCE);
+        assertThat(decision.getNavigationAction()).isEqualTo(DocumentNavigationAction.TOPIC_CONTINUE);
+        assertThat(decision.getStructureAnchor().getStructureNodeId()).isEqualTo(301L);
+        verify(graphService).findBestSection(10L, contextualQuestion, "");
+    }
 }

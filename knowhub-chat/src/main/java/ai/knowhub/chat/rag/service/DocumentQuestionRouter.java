@@ -100,6 +100,12 @@ public class DocumentQuestionRouter {
      */
     private static final Pattern JSON_OBJECT_PATTERN = Pattern.compile("\\{.*}", Pattern.DOTALL);
 
+    /** 多轮章节续问中，提取不会被自然语言噪声淹没的字段名或技术标识。 */
+    private static final Pattern SIMPLE_CODE_SPAN_PATTERN = Pattern.compile("`([A-Za-z][A-Za-z0-9_-]{1,39})`");
+
+    /** 用户问题里没有反引号时，仍保留 data、fieldName 这类简单 ASCII 标识。 */
+    private static final Pattern SIMPLE_ASCII_TOKEN_PATTERN = Pattern.compile("(?i)\\b([a-z][a-z0-9_-]{1,39})\\b");
+
     // ==================== 常量配置 ====================
 
     /**
@@ -289,6 +295,21 @@ public class DocumentQuestionRouter {
     public DocumentNavigationDecision route(Long documentId,
                                             String originalQuestion,
                                             RagRewriteResult rewriteResult) {
+        return route(documentId, originalQuestion, rewriteResult, false);
+    }
+
+    public DocumentNavigationDecision route(Long documentId,
+                                            String originalQuestion,
+                                            RagRewriteResult rewriteResult,
+                                            boolean contextualFollowUp) {
+        return route(documentId, originalQuestion, rewriteResult, contextualFollowUp, "");
+    }
+
+    public DocumentNavigationDecision route(Long documentId,
+                                            String originalQuestion,
+                                            RagRewriteResult rewriteResult,
+                                            boolean contextualFollowUp,
+                                            String historyContext) {
         // 标准化改写结果
         String rewrittenQuestion = firstNonBlank(
             rewriteResult == null ? "" : rewriteResult.getRewrittenQuestion(),
@@ -339,6 +360,23 @@ public class DocumentQuestionRouter {
             );
         }
 
+        // 多轮追问已经由会话记忆确认承接上文。若还能在已选文档中定位到具体章节，
+        // 先用结构图收窄范围再取正文，避免短追问在全库检索中被同名概念干扰。
+        if (contextualFollowUp && !analyticQuestion) {
+            String contextualQuestion = buildContextualSectionQuery(historyContext, originalQuestion);
+            GraphSection section = resolveSection(documentId, contextualQuestion, contextualQuestion);
+            if (section != null) {
+                return buildDecision(
+                    ExecutionMode.GRAPH_THEN_EVIDENCE,
+                    DocumentNavigationAction.TOPIC_CONTINUE,
+                    section,
+                    null,
+                    retrievalPlan,
+                    "多轮追问沿用已确认文档并通过结构图定位正文"
+                );
+            }
+        }
+
         // 决策 3：RETRIEVAL — 标准混合检索（大多数正文问题）
         // 即使走 RETRIEVAL，如果有结构线索，也会作为软提示辅助检索
         GraphSection assistedSection = null;
@@ -359,6 +397,58 @@ public class DocumentQuestionRouter {
                 ? "普通文档问题走混合检索"
                 : "结构线索仅作为软提示辅助混合检索"
         );
+    }
+
+    /**
+     * 为承接上文的短追问构建低噪声章节查询。
+     *
+     * 助手上一轮可能为解释一个概念列出大量示例。直接把整段回答交给章节索引，
+     * 示例标题会压过真正的字段/术语（例如 Docker 示例压过 data/stringData 约束）。
+     * 这里保留用户问题中的简单技术标识，以及助手回答中用反引号标出的字段名和
+     * base64 这类编码标识；若没有可提取标识，再回退到用户上下文原文。
+     */
+    private String buildContextualSectionQuery(String historyContext, String originalQuestion) {
+        LinkedHashSet<String> technicalTokens = new LinkedHashSet<>();
+        List<String> userContext = new ArrayList<>();
+        for (String line : safeText(historyContext).split("\\R")) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("用户：") || trimmed.startsWith("用户:")) {
+                String userText = trimmed.substring(3).trim();
+                if (StrUtil.isNotBlank(userText)) {
+                    userContext.add(userText);
+                    addSimpleAsciiTokens(technicalTokens, userText);
+                }
+                continue;
+            }
+            if (trimmed.startsWith("助手：") || trimmed.startsWith("助手:")) {
+                Matcher codeMatcher = SIMPLE_CODE_SPAN_PATTERN.matcher(trimmed);
+                while (codeMatcher.find()) {
+                    technicalTokens.add(codeMatcher.group(1));
+                }
+                if (trimmed.toLowerCase(Locale.ROOT).contains("base64")) {
+                    technicalTokens.add("base64");
+                }
+            }
+        }
+        addSimpleAsciiTokens(technicalTokens, originalQuestion);
+        if (!technicalTokens.isEmpty()) {
+            return String.join(" ", technicalTokens);
+        }
+        userContext.add(safeText(originalQuestion));
+        return userContext.stream().filter(StrUtil::isNotBlank).distinct().reduce((left, right) -> left + " " + right)
+            .orElse(safeText(originalQuestion));
+    }
+
+    private void addSimpleAsciiTokens(LinkedHashSet<String> tokens, String text) {
+        Matcher matcher = SIMPLE_ASCII_TOKEN_PATTERN.matcher(safeText(text));
+        while (matcher.find()) {
+            String token = matcher.group(1);
+            // 首字母大写的产品/文档名通常已经由 documentId 限定，加入查询只会放大标题噪声。
+            if (Character.isUpperCase(token.charAt(0))) {
+                continue;
+            }
+            tokens.add(token);
+        }
     }
 
     /**

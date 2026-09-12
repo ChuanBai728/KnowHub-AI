@@ -201,7 +201,7 @@ public class ChatRagProperties {
     private boolean forceRetrievalMode = false;
 
     /**
-     * 强制检索时是否使用全部可检索文档作为检索范围。
+     * 是否使用全部可检索文档作为检索范围。该开关不改变 GRAPH/CLARIFICATION 路由模式，
      * 仅建议在离线评测中开启，用于测量不受知识路由截断影响的纯检索能力。
      */
     private boolean forceRetrievalFullCorpus = false;

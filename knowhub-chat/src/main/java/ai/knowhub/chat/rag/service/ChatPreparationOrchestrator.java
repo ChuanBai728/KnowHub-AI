@@ -68,6 +68,7 @@ public class ChatPreparationOrchestrator {
     private static final String FULL_CORPUS_REASON = "离线评测使用全语料检索范围";
     private static final Pattern LATIN_TITLE_TOKEN_PATTERN = Pattern.compile("[A-Za-z][A-Za-z0-9]*");
     private static final Set<String> GENERIC_TITLE_TOKENS = Set.of("apache", "dubbo");
+    private static final Set<String> GENERIC_LATIN_ONLY_TITLE_TOKENS = Set.of("apache", "dubbo", "kubernetes");
 
     /**
      * 能力询问提示词——用户在问"你能做什么"这类问题时，不应该走文档问答。
@@ -88,6 +89,11 @@ public class ChatPreparationOrchestrator {
      */
     private static final Set<String> CHITCHAT_HINTS = Set.of(
         "你好", "您好", "hello", "hi", "谢谢", "感谢", "再见", "拜拜"
+    );
+
+    /** 需要用户补充环境、对象或偏好的宽泛诊断/选型问法。 */
+    private static final Set<String> CLARIFICATION_DECISION_HINTS = Set.of(
+        "我该怎么", "怎么修", "应该选", "该用哪个", "能直接", "怎么让它", "会不会自动"
     );
 
     /** RAG 配置属性 */
@@ -267,15 +273,19 @@ public class ChatPreparationOrchestrator {
             // 自动文档模式会先选知识范围；不确定时返回澄清问题，而不是随便选一份文档回答。
             KnowledgeRouteDecision routeDecision = knowledgeRouteService.route(question, rewriteQuestion);
             knowledgeRouteService.recordAutoRoute(conversationId, taskInfo.exchangeId(), question, rewriteQuestion, routeDecision);
-            List<DocumentRouteCandidate> candidateDocuments = selectAutoCandidates(routeDecision, question, rewriteQuestion);
-            boolean fullCorpusRetrieval = properties.isForceRetrievalMode()
-                && properties.isForceRetrievalFullCorpus();
-            if (fullCorpusRetrieval) {
-                candidateDocuments = fullCorpusCandidates();
-            }
+            boolean contextualFollowUp = answerHistoryContext != null
+                && answerHistoryContext.isFollowUpQuestion()
+                && !answerHistoryContext.isEmpty();
+            List<DocumentRouteCandidate> candidateDocuments = selectAutoCandidates(
+                routeDecision,
+                question,
+                rewriteQuestion,
+                contextualFollowUp ? historySummary : ""
+            );
+            boolean fullCorpusRetrieval = properties.isForceRetrievalFullCorpus();
             // 如果需要澄清（范围不清晰），直接返回澄清模式的执行计划。
             // 评测/批处理模式下可关闭澄清，让问题继续进入 RAG 检索链路。
-            if (shouldAskClarification(routeDecision, candidateDocuments)) {
+            if (shouldAskClarification(routeDecision, candidateDocuments, question, contextualFollowUp)) {
                 return basePlan(question, chatMode, memoryContext, historyPlanningContext, historySummary, answerHistoryContext, currentDate, currentDateText,
                     requiresCurrentDateAnchoring, requiresFreshSearch)
                     .mode(ExecutionMode.CLARIFICATION)
@@ -301,9 +311,9 @@ public class ChatPreparationOrchestrator {
             // 置信度足够高时，选择排名第一的文档
             boolean explicitTopDocument = !candidateDocuments.isEmpty()
                 && EXPLICIT_DOCUMENT_REASON.equals(candidateDocuments.get(0).getReason());
-            boolean confidentTopDocument = !fullCorpusRetrieval && (explicitTopDocument || routeDecision != null
+            boolean confidentTopDocument = explicitTopDocument || routeDecision != null
                 && routeDecision.getConfidence() != null
-                && routeDecision.getConfidence().doubleValue() >= 0.55D);
+                && routeDecision.getConfidence().doubleValue() >= 0.55D;
             DocumentRouteCandidate topDocument = confidentTopDocument && !candidateDocuments.isEmpty() ? candidateDocuments.get(0) : null;
             if (topDocument != null && StrUtil.isNotBlank(topDocument.getDocumentId()) && StrUtil.isNotBlank(topDocument.getLastIndexTaskId())) {
                 routedDocumentId = Long.valueOf(topDocument.getDocumentId());
@@ -315,12 +325,15 @@ public class ChatPreparationOrchestrator {
                 routedDocumentName = "";
                 routedTaskId = null;
             }
-            routedDocumentIds = candidateDocuments.stream()
+            List<DocumentRouteCandidate> retrievalScopeDocuments = fullCorpusRetrieval
+                ? fullCorpusCandidates()
+                : candidateDocuments;
+            routedDocumentIds = retrievalScopeDocuments.stream()
                 .map(DocumentRouteCandidate::getDocumentId)
                 .filter(StrUtil::isNotBlank)
                 .map(Long::valueOf)
                 .toList();
-            routedTaskIds = candidateDocuments.stream()
+            routedTaskIds = retrievalScopeDocuments.stream()
                 .map(DocumentRouteCandidate::getLastIndexTaskId)
                 .filter(StrUtil::isNotBlank)
                 .map(Long::valueOf)
@@ -333,6 +346,7 @@ public class ChatPreparationOrchestrator {
                         "confidence", routeDecision == null || routeDecision.getConfidence() == null ? "" : routeDecision.getConfidence().toPlainString(),
                         "routeStatus", routeDecision == null ? "" : StrUtil.blankToDefault(routeDecision.getRouteStatus(), ""),
                         "candidateDocumentCount", candidateDocuments.size(),
+                        "retrievalScopeDocumentCount", retrievalScopeDocuments.size(),
                         "fullCorpusRetrieval", fullCorpusRetrieval,
                         "explicitTopDocument", explicitTopDocument,
                         "confidentTopDocument", confidentTopDocument,
@@ -360,7 +374,16 @@ public class ChatPreparationOrchestrator {
             }
             else {
                 // 文档导航路由会判断：普通证据检索够不够，还是应该进入章节/条款/图结构查询。
-                navigationDecision = documentQuestionRouter.route(routedDocumentId, question, rewriteResult);
+                boolean contextualFollowUp = answerHistoryContext != null
+                    && answerHistoryContext.isFollowUpQuestion()
+                    && !answerHistoryContext.isEmpty();
+                navigationDecision = documentQuestionRouter.route(
+                    routedDocumentId,
+                    question,
+                    rewriteResult,
+                    contextualFollowUp,
+                    contextualFollowUp ? historySummary : ""
+                );
             }
             if (traceRecorder != null) {
                 traceRecorder.completeStage(routeStage, "执行路由完成。", Map.of(
@@ -647,13 +670,20 @@ public class ChatPreparationOrchestrator {
     List<DocumentRouteCandidate> selectAutoCandidates(KnowledgeRouteDecision routeDecision,
                                                       String question,
                                                       String rewriteQuestion) {
+        return selectAutoCandidates(routeDecision, question, rewriteQuestion, "");
+    }
+
+    List<DocumentRouteCandidate> selectAutoCandidates(KnowledgeRouteDecision routeDecision,
+                                                      String question,
+                                                      String rewriteQuestion,
+                                                      String routingHistory) {
         boolean lowConfidence = routeDecision == null
             || routeDecision.getConfidence() == null
             || routeDecision.getConfidence().doubleValue() < 0.55D;
         int candidateLimit = lowConfidence
             ? Math.max(resolveRouteDocumentTopK(), properties.getLowConfidenceRouteDocumentTopK())
             : resolveRouteDocumentTopK();
-        List<DocumentRouteCandidate> explicit = explicitDocumentCandidates(question, rewriteQuestion);
+        List<DocumentRouteCandidate> explicit = explicitDocumentCandidates(question, rewriteQuestion, routingHistory);
         List<DocumentRouteCandidate> routed = routeDecision == null || routeDecision.getDocuments() == null
             ? List.of()
             : routeDecision.getDocuments().stream()
@@ -681,8 +711,10 @@ public class ChatPreparationOrchestrator {
             .toList();
     }
 
-    private List<DocumentRouteCandidate> explicitDocumentCandidates(String question, String rewriteQuestion) {
-        String rawQuery = safeText(question) + " " + safeText(rewriteQuestion);
+    private List<DocumentRouteCandidate> explicitDocumentCandidates(String question,
+                                                                     String rewriteQuestion,
+                                                                     String routingHistory) {
+        String rawQuery = safeText(question) + " " + safeText(rewriteQuestion) + " " + safeText(routingHistory);
         String query = normalizeFallbackText(rawQuery);
         if (query.isBlank()) {
             return List.of();
@@ -722,11 +754,18 @@ public class ChatPreparationOrchestrator {
         List<String> latinTokens = latinTitleTokens(documentName);
         boolean latinMatched = !latinTokens.isEmpty()
             && latinTokens.stream().allMatch(normalizedQuery::contains);
-        long chineseBigramHits = chineseBigrams(documentName).stream()
+        List<String> titleBigrams = chineseBigrams(documentName);
+        long chineseBigramHits = titleBigrams.stream()
             .filter(normalizedQuery::contains)
             .count();
-        return latinMatched && chineseBigramHits > 0
-            ? 900D + latinTokens.size() * 10D + chineseBigramHits
+        boolean latinOnlyTitle = titleBigrams.isEmpty();
+        long distinctiveLatinHits = latinTokens.stream()
+            .filter(token -> !GENERIC_LATIN_ONLY_TITLE_TOKENS.contains(token))
+            .filter(normalizedQuery::contains)
+            .count();
+        boolean latinOnlyDistinctiveMatch = latinOnlyTitle && distinctiveLatinHits > 0;
+        return (latinMatched && chineseBigramHits > 0) || latinOnlyDistinctiveMatch
+            ? 900D + Math.max(distinctiveLatinHits, latinTokens.size()) * 10D + chineseBigramHits
             : 0D;
     }
 
@@ -827,7 +866,15 @@ public class ChatPreparationOrchestrator {
      * 澄清机制保护回答质量：范围不清时先问清楚，比误选文档后编造答案更安全。
      */
     boolean shouldAskClarification(KnowledgeRouteDecision routeDecision,
-                                   List<DocumentRouteCandidate> candidateDocuments) {
+                                   List<DocumentRouteCandidate> candidateDocuments,
+                                   String question) {
+        return shouldAskClarification(routeDecision, candidateDocuments, question, false);
+    }
+
+    boolean shouldAskClarification(KnowledgeRouteDecision routeDecision,
+                                   List<DocumentRouteCandidate> candidateDocuments,
+                                   String question,
+                                   boolean contextualFollowUp) {
         if (!properties.isClarificationEnabled() || properties.isForceRetrievalMode()) {
             return false;
         }
@@ -837,6 +884,17 @@ public class ChatPreparationOrchestrator {
         }
         if (EXPLICIT_DOCUMENT_REASON.equals(candidateDocuments.get(0).getReason())) {
             return false;
+        }
+        // 已识别为承接上文的追问时，历史已经提供了对象范围，不应因当前句中的
+        // “该用哪个”等字样再次要求用户选择文档。
+        if (contextualFollowUp) {
+            return false;
+        }
+        boolean lowConfidence = routeDecision == null
+            || routeDecision.getConfidence() == null
+            || routeDecision.getConfidence().doubleValue() < 0.55D;
+        if (lowConfidence && looksUnderspecifiedQuestion(question)) {
+            return true;
         }
         if (candidateDocuments.size() < 2) {
             return false;
@@ -849,6 +907,12 @@ public class ChatPreparationOrchestrator {
         }
         return topScore.subtract(secondScore).doubleValue() <= 3D
             && !Objects.equals(candidateDocuments.get(0).getKnowledgeScopeCode(), candidateDocuments.get(1).getKnowledgeScopeCode());
+    }
+
+    private boolean looksUnderspecifiedQuestion(String question) {
+        String normalized = safeText(question);
+        return StrUtil.isNotBlank(normalized)
+            && CLARIFICATION_DECISION_HINTS.stream().anyMatch(normalized::contains);
     }
 
     /**
