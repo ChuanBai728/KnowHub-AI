@@ -119,6 +119,15 @@ app:
       final-top-k: 5
       min-vector-similarity: 0.45
       keyword-relative-score-floor: 0.35
+      rrf:
+        # 越小越强调各通道头部结果；旧版固定值为 60。
+        k: 20
+        vector-weight: 1.0
+        # 普通语义问题降低关键词权重，避免弱关键词共识挤掉向量高位结果。
+        keyword-weight: 0.55
+        adaptive-keyword-weight-enabled: true
+        # 配置项、类名、命令、版本号等精确术语问题恢复关键词贡献。
+        exact-term-keyword-weight: 1.0
       keyword-channel-enabled: true
       rerank-enabled: true
       clarification-enabled: true

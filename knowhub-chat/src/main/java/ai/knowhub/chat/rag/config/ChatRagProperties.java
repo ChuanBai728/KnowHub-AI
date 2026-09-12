@@ -116,6 +116,13 @@ public class ChatRagProperties {
     private double keywordRelativeScoreFloor = 0.35D;
 
     /**
+     * RRF 多通道融合参数。
+     * 默认降低关键词通道在普通语义问题中的权重，避免弱关键词结果因“双通道命中”挤掉
+     * 向量通道的高位结果；检测到配置项、类名、版本号等精确术语时恢复关键词权重。
+     */
+    private RrfProperties rrf = new RrfProperties();
+
+    /**
      * 父块证据的最大字符数。
      * 当检索命中的是子块（chunk）时，系统会尝试提升到其父块以提供更完整的上下文，
      * 此值限制父块文本的最大长度，防止过长。
@@ -246,6 +253,38 @@ public class ChatRagProperties {
      * 配置外部 rerank API 的地址、密钥、模型名等参数。
      */
     private RerankProperties rerank = new RerankProperties();
+
+    /**
+     * RRF（Reciprocal Rank Fusion）配置。
+     */
+    @Data
+    public static class RrfProperties {
+
+        /**
+         * RRF 平滑常数。值越小越强调各通道头部结果。
+         */
+        private int k = 20;
+
+        /**
+         * 向量检索通道权重。
+         */
+        private double vectorWeight = 1.0D;
+
+        /**
+         * 普通语义问题的关键词检索通道权重。
+         */
+        private double keywordWeight = 0.55D;
+
+        /**
+         * 是否根据查询中的精确术语信号动态调整关键词权重。
+         */
+        private boolean adaptiveKeywordWeightEnabled = true;
+
+        /**
+         * 查询包含配置项、类名、命令、版本号等精确术语时使用的关键词权重。
+         */
+        private double exactTermKeywordWeight = 1.0D;
+    }
 
     /**
      * 会话历史摘要压缩的配置属性。

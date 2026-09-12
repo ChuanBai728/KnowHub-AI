@@ -27,6 +27,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -41,6 +42,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.regex.Pattern;
 
 /**
  * 【RAG 检索引擎 — RAG 流水线的"核心检索器"】
@@ -62,7 +64,7 @@ import java.util.concurrent.TimeoutException;
  * RRF（Reciprocal Rank Fusion）是什么？
  * RRF 是一种融合多个排序列表的算法。它不关心各通道的绝对分数，
  * 只关心排名位置，能把分数体系不同的结果合在一起。
- * 公式：RRF_score = sum(1 / (k + rank_i))，k 通常取 60。
+ * 公式：RRF_score = sum(channelWeight / (k + rank_i))。
  *
  * 设计模式：
  * - 策略模式：通过 RetrievalChannel 接口支持不同的检索策略
@@ -76,11 +78,20 @@ import java.util.concurrent.TimeoutException;
 @Service
 public class RagRetrievalEngine {
 
-    /**
-     * RRF 算法的 k 参数。
-     * k 越大，排名靠后的文档惩罚越小。通常取 60。
-     */
-    private static final int RRF_K = 60;
+    private static final Pattern EXACT_TERM_PATTERN = Pattern.compile(
+        "`[^`]+`"
+            + "|--?[A-Za-z][A-Za-z0-9-]*"
+            + "|\\b[A-Z]{2,}[A-Z0-9_-]*\\b"
+            + "|\\b[A-Za-z]+[A-Z][A-Za-z0-9]*\\b"
+            + "|\\b(?=[A-Za-z0-9_]*[A-Za-z])(?=[A-Za-z0-9_]*\\d)[A-Za-z0-9_]+\\b"
+            + "|\\b\\d+(?:\\.\\d+)+\\b"
+            + "|(?:[/\\\\][A-Za-z0-9_.-]+)+"
+    );
+
+    private static final List<String> EXACT_TERM_HINTS = List.of(
+        "配置项", "字段", "参数", "命令", "错误码", "状态码", "类名", "方法名",
+        "接口名", "版本号", "章节号", "文件名", "属性名", "键名"
+    );
 
     /**
      * 检索通道列表（通过 Spring 自动注入所有实现 RetrievalChannel 接口的 Bean）。
@@ -268,7 +279,7 @@ public class RagRetrievalEngine {
             .forEach(result -> markUsedChannel(usedChannels, result.getChannelName()));
 
         // 先融合多通道结果，再提升到父块、重排序、裁剪 TopK，得到最终可喂给模型的证据。
-        List<Document> mergedCandidates = fuseByRrf(channelResults);
+        List<Document> mergedCandidates = fuseByRrf(subQuestion, channelResults);
         List<Document> parentCandidates = documentKnowledgeService.elevateToParentBlocks(
             mergedCandidates,
             properties.getParentEvidenceMaxChars()
@@ -363,18 +374,29 @@ public class RagRetrievalEngine {
      * 使用 RRF（Reciprocal Rank Fusion）算法融合多通道结果。
      *
      * RRF 只关心各通道的排名位置，能把向量和关键词这类分数体系不同的结果合在一起。
-     * 公式：RRF_score = sum(1 / (k + rank_i))，k=60。
+     * 公式：RRF_score = sum(channelWeight / (k + rank_i))。
+     * 普通语义问题降低关键词权重；精确术语问题恢复关键词权重，兼顾 T2 语义问题与技术文档检索。
      */
-    private List<Document> fuseByRrf(List<RetrievalChannelResult> channelResults) {
+    private List<Document> fuseByRrf(String query, List<RetrievalChannelResult> channelResults) {
         // RRF 只关心各通道的排名位置，能把向量和关键词这类分数体系不同的结果合在一起。
         Map<String, CandidateHolder> holders = new LinkedHashMap<>();
+        int rrfK = resolveRrfK();
+        boolean exactTermQuery = hasExactTermSignal(query);
 
         for (RetrievalChannelResult retrievalChannelResult : channelResults) {
-            accumulateRrf(retrievalChannelResult, holders);
+            double channelWeight = resolveRrfChannelWeight(
+                retrievalChannelResult.getChannelName(),
+                exactTermQuery
+            );
+            if (channelWeight > 0D) {
+                accumulateRrf(retrievalChannelResult, holders, rrfK, channelWeight);
+            }
         }
 
         return holders.values().stream()
-            .sorted((left, right) -> Double.compare(right.score, left.score))
+            .sorted(Comparator.comparingDouble((CandidateHolder holder) -> holder.score).reversed()
+                .thenComparingInt(holder -> holder.bestRank)
+                .thenComparing(holder -> holder.key))
             .limit(resolvePreRerankTopK())
             .map(holder -> {
 
@@ -391,7 +413,10 @@ public class RagRetrievalEngine {
      * 累加单个通道的 RRF 分数。
      * 排名越靠前（rank 越小），RRF 分数越高。
      */
-    private void accumulateRrf(RetrievalChannelResult channelResult, Map<String, CandidateHolder> holders) {
+    private void accumulateRrf(RetrievalChannelResult channelResult,
+                               Map<String, CandidateHolder> holders,
+                               int rrfK,
+                               double channelWeight) {
         List<Document> documents = channelResult.getDocuments();
         for (int rank = 0; rank < documents.size(); rank++) {
             Document document = documents.get(rank);
@@ -400,11 +425,46 @@ public class RagRetrievalEngine {
             }
             String documentId = candidateKey(document);
 
-            double rrfScore = 1D / (RRF_K + rank + 1);
-            CandidateHolder holder = holders.computeIfAbsent(documentId, ignored -> new CandidateHolder(document));
+            double rrfScore = channelWeight / (rrfK + rank + 1D);
+            CandidateHolder holder = holders.computeIfAbsent(
+                documentId,
+                ignored -> new CandidateHolder(documentId, document)
+            );
             holder.score += rrfScore;
+            holder.bestRank = Math.min(holder.bestRank, rank + 1);
             holder.channels.add(channelResult.getChannelName());
         }
+    }
+
+    private int resolveRrfK() {
+        ChatRagProperties.RrfProperties rrf = properties.getRrf();
+        return rrf == null ? 20 : Math.max(1, rrf.getK());
+    }
+
+    private double resolveRrfChannelWeight(String channelName, boolean exactTermQuery) {
+        ChatRagProperties.RrfProperties rrf = properties.getRrf();
+        if (rrf == null) {
+            return 1D;
+        }
+        String normalizedChannel = StrUtil.blankToDefault(channelName, "").toLowerCase(Locale.ROOT);
+        double configuredWeight = switch (normalizedChannel) {
+            case "vector" -> rrf.getVectorWeight();
+            case "keyword" -> exactTermQuery && rrf.isAdaptiveKeywordWeightEnabled()
+                ? rrf.getExactTermKeywordWeight()
+                : rrf.getKeywordWeight();
+            default -> 1D;
+        };
+        return Double.isFinite(configuredWeight) ? Math.max(0D, configuredWeight) : 0D;
+    }
+
+    private boolean hasExactTermSignal(String query) {
+        if (StrUtil.isBlank(query)) {
+            return false;
+        }
+        if (EXACT_TERM_PATTERN.matcher(query).find()) {
+            return true;
+        }
+        return EXACT_TERM_HINTS.stream().anyMatch(query::contains);
     }
 
     private int resolvePreRerankTopK() {
@@ -958,11 +1018,14 @@ public class RagRetrievalEngine {
      */
     private static class CandidateHolder {
 
+        private final String key;
         private final Document document;
         private final LinkedHashSet<String> channels = new LinkedHashSet<>();
+        private int bestRank = Integer.MAX_VALUE;
         private double score;
 
-        private CandidateHolder(Document document) {
+        private CandidateHolder(String key, Document document) {
+            this.key = key;
             this.document = document;
         }
     }

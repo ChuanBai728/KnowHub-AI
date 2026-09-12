@@ -183,6 +183,110 @@ class RagRetrievalEngineTest {
             .containsExactly(101L, 103L, 201L, 301L, 401L);
     }
 
+    @Test
+    void protectsVectorHeadResultFromWeakKeywordConsensusForSemanticQuery() {
+        List<RetrievalResultVo> observations = retrieveAndCaptureRrfObservations("如何改善员工福利");
+
+        assertThat(rrfRankFor(observations, 9001L))
+            .isLessThan(rrfRankFor(observations, 9999L));
+    }
+
+    @Test
+    void restoresKeywordContributionForExactTechnicalTerms() {
+        List<RetrievalResultVo> observations = retrieveAndCaptureRrfObservations(
+            "ConfigMap 的 stringData 字段怎么用"
+        );
+
+        assertThat(rrfRankFor(observations, 9999L))
+            .isLessThan(rrfRankFor(observations, 9001L));
+    }
+
+    private List<RetrievalResultVo> retrieveAndCaptureRrfObservations(String query) {
+        Document vectorHead = childDocument(9001L, 9001L, 9001L, "向量通道高位结果", 1.0D);
+        Document sharedTail = childDocument(9999L, 9999L, 9999L, "两个通道末位共同命中", 1.0D);
+
+        List<Document> vectorDocuments = new ArrayList<>();
+        vectorDocuments.add(vectorHead);
+        for (long index = 2; index < 20; index++) {
+            vectorDocuments.add(childDocument(
+                9100L + index,
+                9100L + index,
+                9100L + index,
+                "向量填充结果-" + index,
+                1.0D
+            ));
+        }
+        vectorDocuments.add(sharedTail);
+
+        List<Document> keywordDocuments = new ArrayList<>();
+        for (long index = 1; index < 20; index++) {
+            keywordDocuments.add(childDocument(
+                9200L + index,
+                9200L + index,
+                9200L + index,
+                "关键词填充结果-" + index,
+                1.0D
+            ));
+        }
+        keywordDocuments.add(sharedTail);
+
+        RetrievalChannel vector = channel("vector", vectorDocuments);
+        RetrievalChannel keyword = channel("keyword", keywordDocuments);
+
+        DocumentKnowledgeService knowledgeService = mock(DocumentKnowledgeService.class);
+        when(knowledgeService.elevateToParentBlocks(anyList(), anyInt()))
+            .thenAnswer(invocation -> invocation.getArgument(0));
+
+        ChatRagProperties properties = new ChatRagProperties();
+        properties.setCandidateTopK(50);
+        properties.setPreRerankTopK(50);
+        properties.setFinalTopK(5);
+        properties.setMinVectorSimilarity(0D);
+        properties.setKeywordRelativeScoreFloor(0D);
+        properties.setRerankEnabled(false);
+        properties.setDocumentLevelDedupEnabled(false);
+
+        RagRetrievalEngine engine = new RagRetrievalEngine(
+            List.of(vector, keyword),
+            properties,
+            mock(HttpDocumentRerankPostProcessor.class),
+            knowledgeService,
+            executorService
+        );
+        ConversationTraceRecorder recorder = mock(ConversationTraceRecorder.class);
+        when(recorder.exchangeId()).thenReturn(84L);
+        when(recorder.traceId()).thenReturn("trace-84");
+
+        ConversationExecutionPlan plan = ConversationExecutionPlan.builder()
+            .retrievalQuestion(query)
+            .retrievalSubQuestions(List.of(query))
+            .build();
+        engine.retrieve(plan, recorder);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<RetrievalResultVo>> resultCaptor = ArgumentCaptor.forClass(List.class);
+        verify(recorder).recordRetrievalResults(resultCaptor.capture());
+        return resultCaptor.getValue();
+    }
+
+    private RetrievalChannel channel(String channelName, List<Document> documents) {
+        RetrievalChannel channel = mock(RetrievalChannel.class);
+        when(channel.channelName()).thenReturn(channelName);
+        when(channel.supports(any(ConversationExecutionPlan.class))).thenReturn(true);
+        when(channel.retrieve(any(String.class), any(ConversationExecutionPlan.class)))
+            .thenReturn(new RetrievalChannelResult(channelName, documents));
+        return channel;
+    }
+
+    private static int rrfRankFor(List<RetrievalResultVo> observations, long chunkId) {
+        return observations.stream()
+            .filter(item -> Long.valueOf(chunkId).equals(item.getChunkId()))
+            .map(RetrievalResultVo::getRrfRank)
+            .filter(java.util.Objects::nonNull)
+            .min(Integer::compareTo)
+            .orElseThrow();
+    }
+
     private static Document childDocument(long chunkId, long parentBlockId, long documentId,
                                            String text, double score) {
         Map<String, Object> metadata = new HashMap<>();
