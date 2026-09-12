@@ -721,14 +721,55 @@ public class DocumentKnowledgeServiceImpl implements DocumentKnowledgeService {
             .max(Double::compareTo)
             .orElse(0D);
         int supportCount = Math.max(0, childDocuments.size() - 1);
-        LinkedHashSet<String> channels = childDocuments.stream()
-            .map(document -> asText(document.getMetadata().get(DocumentKnowledgeMetadataKeys.CHANNEL)))
-            .filter(StrUtil::isNotBlank)
-            .collect(Collectors.toCollection(LinkedHashSet::new));
-
         double supportWeight = Math.min(0.36D, supportCount * 0.12D);
-        double multiChannelWeight = channels.size() > 1 ? 0.10D : 0D;
+        double multiChannelWeight = hasMultiChannelSupport(childDocuments) ? 0.10D : 0D;
         return bestChildScore * (1D + supportWeight + multiChannelWeight);
+    }
+
+    /**
+     * 判断父块是否获得多个独立检索通道支持。
+     *
+     * <p>RRF 融合后单个子块的 channel 会被折叠为 hybrid，因此不能只统计 channel 字符串种类；
+     * 优先读取融合阶段写入的 channelCount，并兼容旧数据中的 hybrid 标记。</p>
+     */
+    static boolean hasMultiChannelSupport(List<Document> childDocuments) {
+        if (CollUtil.isEmpty(childDocuments)) {
+            return false;
+        }
+        LinkedHashSet<String> channels = new LinkedHashSet<>();
+        for (Document document : childDocuments) {
+            if (document == null) {
+                continue;
+            }
+            Object channelCountValue = document.getMetadata().get(DocumentKnowledgeMetadataKeys.CHANNEL_COUNT);
+            Integer channelCount = channelCountValue instanceof Number number
+                ? number.intValue()
+                : parseInteger(channelCountValue);
+            if (channelCount != null && channelCount > 1) {
+                return true;
+            }
+            Object channelValue = document.getMetadata().get(DocumentKnowledgeMetadataKeys.CHANNEL);
+            String channel = channelValue == null ? "" : String.valueOf(channelValue).trim();
+            if ("hybrid".equalsIgnoreCase(channel)) {
+                return true;
+            }
+            if (StrUtil.isNotBlank(channel)) {
+                channels.add(channel.toLowerCase(Locale.ROOT));
+            }
+        }
+        return channels.size() > 1;
+    }
+
+    private static Integer parseInteger(Object value) {
+        if (value == null || StrUtil.isBlank(String.valueOf(value))) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(String.valueOf(value));
+        }
+        catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 
     /** 向 metadata 中写入非 null 的值 */

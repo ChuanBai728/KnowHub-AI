@@ -201,6 +201,36 @@ class RagRetrievalEngineTest {
             .isLessThan(rrfRankFor(observations, 9001L));
     }
 
+    @Test
+    void recordsIndependentChannelCountOnFusedCandidate() {
+        Document shared = childDocument(7001L, 7001L, 7001L, "双通道共同命中的证据", 1.0D);
+        RetrievalChannel vector = channel("vector", List.of(shared));
+        RetrievalChannel keyword = channel("keyword", List.of(shared));
+        DocumentKnowledgeService knowledgeService = mock(DocumentKnowledgeService.class);
+        when(knowledgeService.elevateToParentBlocks(anyList(), anyInt()))
+            .thenAnswer(invocation -> invocation.getArgument(0));
+        ChatRagProperties properties = new ChatRagProperties();
+        properties.setFinalTopK(1);
+        properties.setMinVectorSimilarity(0D);
+        properties.setKeywordRelativeScoreFloor(0D);
+        properties.setRerankEnabled(false);
+
+        RagRetrievalEngine engine = new RagRetrievalEngine(
+            List.of(vector, keyword), properties, mock(HttpDocumentRerankPostProcessor.class),
+            knowledgeService, executorService
+        );
+        ConversationExecutionPlan plan = ConversationExecutionPlan.builder()
+            .retrievalQuestion("共同命中")
+            .retrievalSubQuestions(List.of("共同命中"))
+            .build();
+
+        Document selected = engine.retrieve(plan, null)
+            .getSubQuestionEvidenceList().get(0).getDocuments().get(0);
+
+        assertThat(selected.getMetadata().get(DocumentKnowledgeMetadataKeys.CHANNEL)).isEqualTo("hybrid");
+        assertThat(selected.getMetadata().get(DocumentKnowledgeMetadataKeys.CHANNEL_COUNT)).isEqualTo(2);
+    }
+
     private List<RetrievalResultVo> retrieveAndCaptureRrfObservations(String query) {
         Document vectorHead = childDocument(9001L, 9001L, 9001L, "向量通道高位结果", 1.0D);
         Document sharedTail = childDocument(9999L, 9999L, 9999L, "两个通道末位共同命中", 1.0D);

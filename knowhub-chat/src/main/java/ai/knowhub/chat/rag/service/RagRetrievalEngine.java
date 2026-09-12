@@ -404,6 +404,7 @@ public class RagRetrievalEngine {
                 holder.document.getMetadata().put(DocumentKnowledgeMetadataKeys.RRF_SCORE, holder.score);
                 holder.document.getMetadata().put(DocumentKnowledgeMetadataKeys.CHANNEL,
                     holder.channels.size() > 1 ? "hybrid" : holder.channels.iterator().next());
+                holder.document.getMetadata().put(DocumentKnowledgeMetadataKeys.CHANNEL_COUNT, holder.channels.size());
                 return holder.document;
             })
             .toList();

@@ -30,6 +30,12 @@ public final class DocumentKnowledgeMetadataKeys {
     public static final String CHANNEL = "channel";
 
     /**
+     * 共同命中该候选的独立检索通道数量。
+     * 父块聚合需要保留这个信息，否则融合后的 "hybrid" 会被误当成单一通道。
+     */
+    public static final String CHANNEL_COUNT = "channelCount";
+
+    /**
      * 相关性分数（Score）
      * 检索引擎返回的相关性评分，数值越高表示与查询越相关
      */
