@@ -596,7 +596,11 @@ def replay_conversation(client: KnowHubClient, question: dict[str, Any], convers
 
 
 def evaluate(client: KnowHubClient, output_dir: Path, chat_timeout: int,
-             components: set[str] | None = None) -> None:
+             components: set[str] | None = None,
+             question_ids: set[str] | None = None,
+             observations_file: str = "observations.jsonl",
+             max_cases: int | None = None,
+             rerun_completed: bool = False) -> None:
     state = json.loads((output_dir / "import-state.json").read_text(encoding="utf-8"))
     runtime_to_official = {
         str(item["runtime_document_id"]): item["doc_id"]
@@ -607,8 +611,12 @@ def evaluate(client: KnowHubClient, output_dir: Path, chat_timeout: int,
     gold = read_gold(output_dir)
     if components:
         gold = [item for item in gold if str(item.get("component") or "") in components]
+    if question_ids:
+        gold = [item for item in gold if str(item.get("question_id") or "") in question_ids]
+    if max_cases is not None and max_cases > 0:
+        gold = gold[:max_cases]
 
-    observations_path = output_dir / "observations.jsonl"
+    observations_path = output_dir / Path(observations_file).name
     completed = set()
     if observations_path.exists():
         for line in observations_path.read_text(encoding="utf-8").splitlines():
@@ -619,7 +627,7 @@ def evaluate(client: KnowHubClient, output_dir: Path, chat_timeout: int,
 
     with observations_path.open("a", encoding="utf-8") as handle:
         for index, question in enumerate(gold, start=1):
-            if question["question_id"] in completed:
+            if question["question_id"] in completed and not rerun_completed:
                 continue
             log(f"Evaluating {index}/{len(gold)} {question['question_id']}")
             conversation_id = ""
@@ -1053,9 +1061,30 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--timeout", type=int, default=60)
     parser.add_argument("--chat-timeout", type=int, default=360)
     parser.add_argument(
+        "--observations-file",
+        default="observations.jsonl",
+        help="Observation JSONL filename inside output-dir; use a new name to preserve earlier runs.",
+    )
+    parser.add_argument(
+        "--max-cases",
+        type=int,
+        default=0,
+        help="Maximum cases after component filtering; zero evaluates all selected cases.",
+    )
+    parser.add_argument(
         "--components",
         default="",
         help="Comma-separated component names to evaluate; empty evaluates every component.",
+    )
+    parser.add_argument(
+        "--question-ids",
+        default="",
+        help="Comma-separated question IDs to evaluate; empty evaluates every selected case.",
+    )
+    parser.add_argument(
+        "--rerun-completed",
+        action="store_true",
+        help="Append fresh observations even when selected question IDs already completed.",
     )
     parser.add_argument("--phase", choices=["prepare", "import", "evaluate", "report", "all"], default="all")
     args = parser.parse_args(argv)
@@ -1078,7 +1107,17 @@ def main(argv: list[str]) -> int:
             import_documents(client, output_dir, args.poll_seconds)
         if args.phase in ("evaluate", "all"):
             components = {item.strip() for item in args.components.split(",") if item.strip()}
-            evaluate(client, output_dir, args.chat_timeout, components or None)
+            question_ids = {item.strip() for item in args.question_ids.split(",") if item.strip()}
+            evaluate(
+                client,
+                output_dir,
+                args.chat_timeout,
+                components or None,
+                question_ids=question_ids or None,
+                observations_file=args.observations_file,
+                max_cases=args.max_cases or None,
+                rerun_completed=args.rerun_completed,
+            )
 
     if args.phase == "report":
         write_report(output_dir)

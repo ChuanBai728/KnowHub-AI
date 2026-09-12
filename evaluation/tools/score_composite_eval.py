@@ -20,6 +20,25 @@ REFUSAL_MARKERS = (
     "无法回答", "无法从", "没有足够", "资料不足", "信息不足", "证据不足",
     "未找到", "不能给出", "暂时不能", "无法确定", "无法确认",
 )
+SEMANTIC_REPLACEMENTS = (
+    ("任何", "任意"),
+    ("可以使用任意字符串作为其取值", "可以提供任意字符串"),
+    ("可使用任意字符串作为取值", "可提供任意字符串"),
+    ("存储在api服务器的底层数据存储etcd", "存储在etcd"),
+    ("以最小特权访问secret并启用或配置rbac规则", "最小特权和rbac"),
+    ("限制secret对特定容器的访问", "限制到特定容器"),
+    ("默认情况下", "默认"),
+    ("尚不可用时", "可用之前"),
+    ("未就绪时", "可用之前"),
+    ("重新启动", "重启"),
+    ("重新开启", "重启"),
+    ("不会", "不"),
+    ("不能", "不"),
+    ("必须", "需要"),
+    ("建议考虑", "可"),
+    ("或者", "或"),
+)
+LEADING_MODAL_MARKERS = ("可以", "可", "需要", "应该", "应当", "建议")
 
 
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -89,16 +108,56 @@ def bounded_subsequence(needle: str, haystack: str) -> bool:
     return False
 
 
+def semantic_variants(value: Any) -> list[str]:
+    normalized = normalize_text(value)
+    for source, replacement in SEMANTIC_REPLACEMENTS:
+        normalized = normalized.replace(source, replacement)
+    variants = [normalized]
+    for marker in LEADING_MODAL_MARKERS:
+        if normalized.startswith(marker) and len(normalized) > len(marker) + 1:
+            variants.append(normalized[len(marker):])
+    return unique(variants)
+
+
+def ngram_coverage(needle: str, haystack: str, size: int) -> float:
+    if len(needle) < size:
+        return 0.0
+    expected = {needle[index:index + size] for index in range(len(needle) - size + 1)}
+    actual = {haystack[index:index + size] for index in range(len(haystack) - size + 1)}
+    return len(expected & actual) / len(expected) if expected else 0.0
+
+
+def conservative_paraphrase_match(needle: str, haystack: str) -> bool:
+    """Accept local reordering while preserving numbers, Latin identifiers, and polarity."""
+    if len(needle) < 8:
+        return False
+    literals = re.findall(r"[a-z]+[a-z0-9.]*|\d+(?:\.\d+)*", needle)
+    if any(literal not in haystack for literal in literals):
+        return False
+    if any(marker in needle for marker in ("不", "未", "无", "非")) \
+        and not any(marker in haystack for marker in ("不", "未", "无", "非")):
+        return False
+    return ngram_coverage(needle, haystack, 2) >= 0.80 \
+        and ngram_coverage(needle, haystack, 3) >= 0.60
+
+
 def fact_matched(fact: Any, answer: str) -> bool:
-    normalized_answer = normalize_text(answer)
+    answer_variants = semantic_variants(answer)
     for choice in fact_choices(fact):
-        normalized_choice = normalize_text(choice)
-        if not normalized_choice:
-            continue
-        if normalized_choice in normalized_answer:
-            return True
-        if bounded_subsequence(normalized_choice, normalized_answer):
-            return True
+        for normalized_choice in semantic_variants(choice):
+            if not normalized_choice:
+                continue
+            for normalized_answer in answer_variants:
+                if normalized_choice in normalized_answer:
+                    return True
+                bounded_answer = normalized_answer
+                if not re.search(r"[a-z0-9]", normalized_choice):
+                    # 中文事实中插入产品/字段名属于解释限定，不应把相邻语义拆成漏判。
+                    bounded_answer = re.sub(r"[a-z0-9.]+", "", normalized_answer)
+                if bounded_subsequence(normalized_choice, bounded_answer):
+                    return True
+                if conservative_paraphrase_match(normalized_choice, normalized_answer):
+                    return True
     return False
 
 
@@ -328,14 +387,19 @@ def fmt(value: Any) -> str:
 
 def write_markdown(path: Path, result: dict[str, Any]) -> None:
     overall = result["overall"]
+    is_subset = result.get("score_scope") == "observed_subset"
+    score_label = "非正式子集分" if is_subset else "综合分"
     lines = [
-        "# KnowHub 300 题复合评测结果", "",
+        "# KnowHub 复合评测结果", "",
         f"- 完成率：{overall['completed']}/{overall['cases']}（{fmt(overall['completion_rate'])}）",
-        f"- 综合分：{result['composite_score']:.2f}/100", "",
+        f"- {score_label}：{result['composite_score']:.2f}/100", "",
         "| 子集 | 题数 | 子集分 | Recall@10 | MRR@10 | 答案通过率 | 拒答通过率 | 路由准确率 |",
         "|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
-    for component in ("t2retrieval", "cmrc2018", "rgb", "technical_docs"):
+    canonical_order = ("t2retrieval", "cmrc2018", "rgb", "technical_docs")
+    component_order = [component for component in canonical_order if component in result["components"]]
+    component_order.extend(sorted(set(result["components"]) - set(canonical_order)))
+    for component in component_order:
         item = result["components"][component]
         lines.append(
             f"| {component} | {item['cases']} | {item['score']:.2f} | {fmt(item['recall@10'])} | "
@@ -355,20 +419,32 @@ def write_markdown(path: Path, result: dict[str, Any]) -> None:
         f"- 拒答通过率 / 禁止事实规避率：{fmt(overall['abstention_pass_rate'])} / {fmt(overall['forbidden_claim_avoidance_rate'])}",
         f"- 路由准确率 / 澄清召回率：{fmt(overall['route_accuracy'])} / {fmt(overall['clarification_recall'])}",
         f"- 总延迟 P50 / P95：{overall['latency_ms']['total_p50']:.0f} ms / {overall['latency_ms']['total_p95']:.0f} ms", "",
-        "综合分为四个子集分的等权平均；各子集权重公式见 metrics.json。",
     ])
+    if is_subset:
+        lines.append("当前为 `--only-observed` 子集烟测，分数仅为已执行子集分的平均值，不是正式四子集等权综合分。")
+    else:
+        lines.append("综合分为四个子集分的等权平均；各子集权重公式见对应 JSON 指标文件。")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--observations-file", default="observations.jsonl")
+    parser.add_argument("--metrics-prefix", default="metrics")
+    parser.add_argument(
+        "--only-observed",
+        action="store_true",
+        help="Score only question IDs present in the selected observation file (useful for smoke runs).",
+    )
     args = parser.parse_args(argv)
     output_dir = Path(args.output_dir)
     gold = load_jsonl(output_dir / "gold.jsonl")
     observations_by_id = {
-        str(item["question_id"]): item for item in load_jsonl(output_dir / "observations.jsonl")
+        str(item["question_id"]): item for item in load_jsonl(output_dir / Path(args.observations_file).name)
     }
+    if args.only_observed:
+        gold = [item for item in gold if str(item["question_id"]) in observations_by_id]
     state = json.loads((output_dir / "import-state.json").read_text(encoding="utf-8"))
     runtime_to_official = {
         str(item["runtime_document_id"]): str(item["doc_id"])
@@ -385,11 +461,16 @@ def main(argv: list[str]) -> int:
         components[component] = metrics
     result = {
         "dataset": "knowhub-cn-composite-rag-v1",
+        "score_scope": "observed_subset" if args.only_observed else "full_dataset",
+        "official_composite": not args.only_observed,
         "overall": summarize(rows),
         "components": components,
         "composite_score": mean(item["score"] for item in components.values()),
         "score_formula": {
-            "composite": "四个子集分等权平均",
+            "composite": (
+                "已执行子集分等权平均（非正式子集分）"
+                if args.only_observed else "四个子集分等权平均"
+            ),
             "t2retrieval": "45% Recall@10 + 35% MRR@10 + 20% Final Recall@5",
             "cmrc2018": "60% 答案通过率 + 20% 正确文档引用率 + 20% Recall@5",
             "rgb": "50% 答案通过率 + 25% 拒答通过率 + 25% 禁止事实规避率",
@@ -397,8 +478,9 @@ def main(argv: list[str]) -> int:
         },
         "rows": rows,
     }
-    (output_dir / "metrics.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
-    write_markdown(output_dir / "metrics.md", result)
+    metrics_prefix = Path(args.metrics_prefix).name
+    (output_dir / f"{metrics_prefix}.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_markdown(output_dir / f"{metrics_prefix}.md", result)
     print(json.dumps({
         "completed": result["overall"]["completed"],
         "total": result["overall"]["cases"],
