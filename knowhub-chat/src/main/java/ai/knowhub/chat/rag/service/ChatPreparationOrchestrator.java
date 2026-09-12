@@ -277,9 +277,12 @@ public class ChatPreparationOrchestrator {
                 && !answerHistoryContext.isEmpty();
             KnowledgeRouteDecision routeDecision = null;
             List<DocumentRouteCandidate> candidateDocuments = List.of();
+            String routeHistory = "";
             if (!bypassKnowledgeRoute) {
-                // 自动文档模式会先选知识范围；不确定时返回澄清问题，而不是随便选一份文档回答。
-                routeDecision = knowledgeRouteService.route(question, rewriteQuestion);
+                // 携带最近历史：多轮追问常常只有指代词、没有独立主谓，仅凭问题本身会命中泛化词
+                // 并把正确文档挤出候选池。
+                routeHistory = resolveRouteHistory(historySummary);
+                routeDecision = knowledgeRouteService.route(question, rewriteQuestion, routeHistory);
                 knowledgeRouteService.recordAutoRoute(conversationId, taskInfo.exchangeId(), question, rewriteQuestion, routeDecision);
                 candidateDocuments = selectAutoCandidates(
                     routeDecision,
@@ -347,17 +350,19 @@ public class ChatPreparationOrchestrator {
                 traceRecorder.completeStage(
                     traceRecorder.startStage(ConversationTraceStageCode.ROUTE, "AUTO_DOCUMENT", "正在生成知识范围候选。", null),
                     "知识范围路由完成。",
-                    Map.of(
-                        "confidence", routeDecision == null || routeDecision.getConfidence() == null ? "" : routeDecision.getConfidence().toPlainString(),
-                        "routeStatus", routeDecision == null ? "" : StrUtil.blankToDefault(routeDecision.getRouteStatus(), ""),
-                        "candidateDocumentCount", candidateDocuments.size(),
-                        "retrievalScopeDocumentCount", retrievalScopeDocuments.size(),
-                        "fullCorpusRetrieval", fullCorpusRetrieval,
-                        "knowledgeRouteBypassed", bypassKnowledgeRoute,
-                        "explicitTopDocument", explicitTopDocument,
-                        "confidentTopDocument", confidentTopDocument,
-                        "topDocumentId", topDocument == null ? "" : StrUtil.blankToDefault(topDocument.getDocumentId(), ""),
-                        "topDocumentName", topDocument == null ? "" : StrUtil.blankToDefault(topDocument.getDocumentName(), "")
+                    Map.<String, Object>ofEntries(
+                        Map.entry("confidence", routeDecision == null || routeDecision.getConfidence() == null ? "" : routeDecision.getConfidence().toPlainString()),
+                        Map.entry("routeStatus", routeDecision == null ? "" : StrUtil.blankToDefault(routeDecision.getRouteStatus(), "")),
+                        Map.entry("candidateDocumentCount", candidateDocuments.size()),
+                        Map.entry("retrievalScopeDocumentCount", retrievalScopeDocuments.size()),
+                        Map.entry("fullCorpusRetrieval", fullCorpusRetrieval),
+                        Map.entry("knowledgeRouteBypassed", bypassKnowledgeRoute),
+                        // 记录本次路由是否携带了历史：诊断追问漏召回时必须能看到这一点。
+                        Map.entry("routeHistoryChars", routeHistory.length()),
+                        Map.entry("explicitTopDocument", explicitTopDocument),
+                        Map.entry("confidentTopDocument", confidentTopDocument),
+                        Map.entry("topDocumentId", topDocument == null ? "" : StrUtil.blankToDefault(topDocument.getDocumentId(), "")),
+                        Map.entry("topDocumentName", topDocument == null ? "" : StrUtil.blankToDefault(topDocument.getDocumentName(), ""))
                     )
                 );
             }
@@ -380,15 +385,13 @@ public class ChatPreparationOrchestrator {
             }
             else {
                 // 文档导航路由会判断：普通证据检索够不够，还是应该进入章节/条款/图结构查询。
-                boolean contextualFollowUp = answerHistoryContext != null
-                    && answerHistoryContext.isFollowUpQuestion()
-                    && !answerHistoryContext.isEmpty();
+                // 只要会话里有上一轮就带上历史：模式决策要用它去结构图定位章节，而“是否被
+                // 判定为追问”的启发式召回率很低（10 道多轮追问只认出 4 道），不该由它把关。
                 navigationDecision = documentQuestionRouter.route(
                     routedDocumentId,
                     question,
                     rewriteResult,
-                    contextualFollowUp,
-                    contextualFollowUp ? historySummary : ""
+                    historySummary
                 );
             }
             if (traceRecorder != null) {
@@ -541,6 +544,23 @@ public class ChatPreparationOrchestrator {
             .retrievalHints(payload.getRetrievalHints() == null ? List.of() : new ArrayList<>(payload.getRetrievalHints()))
             .queryContextHints(payload.getRetrievalHints() == null ? List.of() : new ArrayList<>(payload.getRetrievalHints()))
             .build();
+    }
+
+    /**
+     * 构建注入知识路由的历史上下文。
+     *
+     * 存在上一轮对话时才注入（等价于 historySummary 非空），按尾部截取最近内容——尾部就是
+     * 最近的对话。限长是为了避免上一轮话题稀释当前问题的 embedding：路由文本是单个向量，
+     * 历史过长会把它拉向旧话题，对多轮会话里的独立问题反而有害。
+     *
+     * @return 截断后的历史；返回空串表示不注入
+     */
+    String resolveRouteHistory(String historySummary) {
+        int maxChars = properties.getRouteHistoryMaxChars();
+        if (maxChars <= 0 || StrUtil.isBlank(historySummary)) {
+            return "";
+        }
+        return clipTail(historySummary, maxChars);
     }
 
     /**

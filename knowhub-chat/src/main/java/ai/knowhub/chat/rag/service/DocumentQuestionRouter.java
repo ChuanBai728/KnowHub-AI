@@ -295,20 +295,12 @@ public class DocumentQuestionRouter {
     public DocumentNavigationDecision route(Long documentId,
                                             String originalQuestion,
                                             RagRewriteResult rewriteResult) {
-        return route(documentId, originalQuestion, rewriteResult, false);
+        return route(documentId, originalQuestion, rewriteResult, "");
     }
 
     public DocumentNavigationDecision route(Long documentId,
                                             String originalQuestion,
                                             RagRewriteResult rewriteResult,
-                                            boolean contextualFollowUp) {
-        return route(documentId, originalQuestion, rewriteResult, contextualFollowUp, "");
-    }
-
-    public DocumentNavigationDecision route(Long documentId,
-                                            String originalQuestion,
-                                            RagRewriteResult rewriteResult,
-                                            boolean contextualFollowUp,
                                             String historyContext) {
         // 标准化改写结果
         String rewrittenQuestion = firstNonBlank(
@@ -360,9 +352,14 @@ public class DocumentQuestionRouter {
             );
         }
 
-        // 多轮追问已经由会话记忆确认承接上文。若还能在已选文档中定位到具体章节，
-        // 先用结构图收窄范围再取正文，避免短追问在全库检索中被同名概念干扰。
-        if (contextualFollowUp && !analyticQuestion) {
+        // 会话里有上一轮对话时，先尝试用结构图定位章节再取正文，避免追问在全库检索中被
+        // 同名概念干扰。
+        //
+        // 这里刻意不看"是否被判定为追问"：那个判定靠关键词表 + 字数规则，实测只能认出
+        // 10 道多轮追问中的 4 道，另外 6 道因此够不到本分支、退化成正则混合检索。
+        // "有历史"是事实而不是猜测，且下面 resolveSection 定位不到时会原样落回 RETRIEVAL，
+        // 所以放宽入口不会凭空改变没有章节线索的问题。
+        if (StrUtil.isNotBlank(historyContext) && !analyticQuestion) {
             String contextualQuestion = buildContextualSectionQuery(historyContext, originalQuestion);
             GraphSection section = resolveSection(documentId, contextualQuestion, contextualQuestion);
             if (section != null) {

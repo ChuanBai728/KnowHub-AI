@@ -38,6 +38,20 @@ public interface KnowledgeRouteService {
     KnowledgeRouteDecision route(String question, String rewriteQuestion);
 
     /**
+     * 执行知识路由决策，并携带最近的历史上下文。
+     *
+     * 多轮追问往往只含指代词、没有独立主谓，仅凭问题本身无法定位到正确文档。historyContext
+     * 会按尾部截取后并入路由文本（限长，避免上一轮话题稀释当前问题）。historyContext 为空
+     * 时行为与 {@link #route(String, String)} 完全一致。
+     *
+     * @param question        用户的原始问题
+     * @param rewriteQuestion 经过改写/优化后的问题
+     * @param historyContext  最近的历史上下文，可为空
+     * @return 路由决策结果，包含选中的文档列表和路由元数据
+     */
+    KnowledgeRouteDecision route(String question, String rewriteQuestion, String historyContext);
+
+    /**
      * 记录影子路由
      *
      * 功能说明：

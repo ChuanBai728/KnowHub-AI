@@ -145,7 +145,12 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
      */
     @Override
     public KnowledgeRouteDecision route(String question, String rewriteQuestion) {
-        RouteQueryContext queryContext = buildQueryContext(question, rewriteQuestion);
+        return route(question, rewriteQuestion, "");
+    }
+
+    @Override
+    public KnowledgeRouteDecision route(String question, String rewriteQuestion, String historyContext) {
+        RouteQueryContext queryContext = buildQueryContext(question, rewriteQuestion, historyContext);
         KnowledgeRouteDecision decision = new KnowledgeRouteDecision();
         if (queryContext.queryTerms().isEmpty()) {
             decision.setRouteStatus("FAILED");
@@ -558,10 +563,10 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
 
     /**
      * 构建查询上下文。
-     * 合并原始问题和改写问题，提取关键词，生成 embedding。
+     * 合并原始问题、改写问题和最近历史，提取关键词，生成 embedding。
      */
-    private RouteQueryContext buildQueryContext(String question, String rewriteQuestion) {
-        String routingText = buildRoutingText(question, rewriteQuestion);
+    private RouteQueryContext buildQueryContext(String question, String rewriteQuestion, String historyContext) {
+        String routingText = buildRoutingText(question, rewriteQuestion, historyContext);
         List<String> queryTerms = tokenize(routingText);
         float[] queryEmbedding = embedSingle(routingText);
         return new RouteQueryContext(
@@ -575,9 +580,21 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
 
     /**
      * 构建路由文本。
-     * 合并原始问题和改写问题（如果不同的话）。
+     * 合并原始问题、改写问题和最近历史（如果有的话）。
+     *
+     * 历史放在末尾：当前问题仍是最主要的信号，历史只用于补足追问缺失的指代对象。
+     * 截断由调用方按配置负责（历史长度上限属于 chat 模块的配置属性）。
      */
-    private String buildRoutingText(String question, String rewriteQuestion) {
+    static String buildRoutingText(String question, String rewriteQuestion, String historyContext) {
+        String base = joinQuestionAndRewrite(question, rewriteQuestion);
+        String history = normalizeRoutingHistory(historyContext);
+        if (StrUtil.isBlank(history)) {
+            return base;
+        }
+        return StrUtil.isBlank(base) ? history : base + " " + history;
+    }
+
+    static String joinQuestionAndRewrite(String question, String rewriteQuestion) {
         String original = StrUtil.blankToDefault(question, "").trim();
         String rewritten = StrUtil.blankToDefault(rewriteQuestion, "").trim();
         if (StrUtil.isBlank(original)) {
@@ -587,6 +604,11 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
             return original;
         }
         return original + " " + rewritten;
+    }
+
+    /** 历史文本压成单行，避免换行影响分词与 embedding。 */
+    static String normalizeRoutingHistory(String historyContext) {
+        return StrUtil.blankToDefault(historyContext, "").replaceAll("\\s+", " ").trim();
     }
 
     /**

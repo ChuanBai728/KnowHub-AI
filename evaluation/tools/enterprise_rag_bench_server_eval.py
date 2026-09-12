@@ -64,6 +64,7 @@ RAG_RUN_CONFIG_KEYS = (
     ("min-vector-similarity", "min_vector_similarity"),
     ("route-document-top-k", "route_document_top_k"),
     ("low-confidence-route-document-top-k", "low_confidence_route_document_top_k"),
+    ("route-history-max-chars", "route_history_max_chars"),
     ("rrf.k", "rrf_k"),
     ("rrf.vector-weight", "rrf_vector_weight"),
     ("rrf.keyword-weight", "rrf_keyword_weight"),

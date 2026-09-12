@@ -184,6 +184,40 @@ class ChatPreparationOrchestratorTest {
         ));
     }
 
+    @Test
+    void injectsRouteHistoryOnlyWhenThereIsAPreviousTurn() {
+        assertEquals("", orchestrator.resolveRouteHistory(""));
+        assertEquals("", orchestrator.resolveRouteHistory("   "));
+        assertEquals("", orchestrator.resolveRouteHistory(null));
+    }
+
+    @Test
+    void clipsRouteHistoryFromTheTailAndKeepsItWithinBudget() {
+        properties.setRouteHistoryMaxChars(20);
+        String history = "旧话题的内容很长很长" + "最近一轮用户问题在这里";
+
+        String resolved = orchestrator.resolveRouteHistory(history);
+
+        assertEquals(20, resolved.length());
+        assertTrue(resolved.startsWith("…"), resolved);
+        // 尾部是最近的对话，必须保留；头部旧内容被丢弃。
+        assertTrue(resolved.endsWith("最近一轮用户问题在这里"), resolved);
+    }
+
+    @Test
+    void routeHistoryCanBeDisabledByConfiguration() {
+        properties.setRouteHistoryMaxChars(0);
+
+        assertEquals("", orchestrator.resolveRouteHistory("用户：上一轮的问题"));
+    }
+
+    @Test
+    void keepsShortRouteHistoryIntact() {
+        properties.setRouteHistoryMaxChars(200);
+
+        assertEquals("用户：上一轮的问题", orchestrator.resolveRouteHistory("用户：上一轮的问题"));
+    }
+
     private KnowledgeDocumentDescriptor descriptor(long documentId,
                                                    String name,
                                                    long taskId,

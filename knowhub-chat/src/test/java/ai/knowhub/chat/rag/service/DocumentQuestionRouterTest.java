@@ -132,7 +132,6 @@ class DocumentQuestionRouterTest {
             10L,
             question,
             new RagRewriteResult(question, List.of(question)),
-            true,
             history
         );
 
@@ -140,5 +139,54 @@ class DocumentQuestionRouterTest {
         assertThat(decision.getNavigationAction()).isEqualTo(DocumentNavigationAction.TOPIC_CONTINUE);
         assertThat(decision.getStructureAnchor().getStructureNodeId()).isEqualTo(301L);
         verify(graphService).findBestSection(10L, contextualQuestion, "");
+    }
+
+    @Test
+    void keepsPlainRetrievalWhenThereIsNoHistory() {
+        DocumentStructureGraphService graphService = mock(DocumentStructureGraphService.class);
+        when(graphService.listSections(10L)).thenReturn(List.of());
+        String question = "Kubernetes ConfigMap 的 stringData 字段怎么用";
+
+        @SuppressWarnings("unchecked")
+        ObjectProvider<DocumentNavigationIndexService> navigationIndexProvider = mock(ObjectProvider.class);
+        DocumentQuestionRouter router = new DocumentQuestionRouter(
+            graphService,
+            navigationIndexProvider,
+            mock(ObservedChatModelService.class),
+            mock(PromptTemplateService.class),
+            new ObjectMapper()
+        );
+
+        DocumentNavigationDecision decision = router.route(
+            10L, question, new RagRewriteResult(question, List.of(question)));
+
+        assertThat(decision.getExecutionMode()).isEqualTo(ExecutionMode.RETRIEVAL);
+        assertThat(decision.getNavigationAction()).isEqualTo(DocumentNavigationAction.FRESH_TOPIC);
+    }
+
+    @Test
+    void fallsBackToRetrievalWhenHistoryHasNoResolvableSection() {
+        DocumentStructureGraphService graphService = mock(DocumentStructureGraphService.class);
+        when(graphService.listSections(10L)).thenReturn(List.of());
+        // 这道题在旧启发式下不会被判成追问（超过 18 字），但入口按"有历史"放行后，
+        // 仍必须由 resolveSection 兜住：定位不到章节就原样落回混合检索。
+        String question = "同一个 Pod 里的边车容器也会循环重启吗？";
+        String history = "用户：Pod 在 restartPolicy: OnFailure 时失败会怎样？\n助手：会重启。";
+
+        @SuppressWarnings("unchecked")
+        ObjectProvider<DocumentNavigationIndexService> navigationIndexProvider = mock(ObjectProvider.class);
+        DocumentQuestionRouter router = new DocumentQuestionRouter(
+            graphService,
+            navigationIndexProvider,
+            mock(ObservedChatModelService.class),
+            mock(PromptTemplateService.class),
+            new ObjectMapper()
+        );
+
+        DocumentNavigationDecision decision = router.route(
+            10L, question, new RagRewriteResult(question, List.of(question)), history);
+
+        assertThat(decision.getExecutionMode()).isEqualTo(ExecutionMode.RETRIEVAL);
+        assertThat(decision.getNavigationAction()).isEqualTo(DocumentNavigationAction.FRESH_TOPIC);
     }
 }

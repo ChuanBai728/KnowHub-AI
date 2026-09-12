@@ -212,6 +212,15 @@ public class ChatRagProperties {
     private int routeDocumentTopK = 20;
 
     /**
+     * 注入路由文本的历史上下文字符数上限；0 表示不注入。
+     *
+     * 多轮追问常常只有指代词、没有独立主谓（例如“…节点的哪一个最好选一个？”），
+     * 若只拿问题本身去路由，会命中泛化词并把正确的文档挤出候选池。历史按尾部截取
+     * （尾部是最近的对话），并且限长以避免上一轮话题稀释当前问题的 embedding。
+     */
+    private int routeHistoryMaxChars = 200;
+
+    /**
      * 自动路由置信度不足时保留的候选文档数。扩大候选后继续检索，避免仅因低置信度过早澄清。
      */
     private int lowConfidenceRouteDocumentTopK = 100;
