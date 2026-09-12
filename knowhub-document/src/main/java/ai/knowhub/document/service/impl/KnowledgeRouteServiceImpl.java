@@ -7,12 +7,14 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import ai.knowhub.document.data.KnowHubDocument;
 import ai.knowhub.document.data.KnowHubDocumentProfile;
+import ai.knowhub.document.data.KnowHubDocumentStructureNode;
 import ai.knowhub.document.data.KnowHubKnowledgeRouteTrace;
 import ai.knowhub.document.data.KnowHubKnowledgeScopeNode;
 import ai.knowhub.document.data.KnowHubKnowledgeTopicNode;
 import ai.knowhub.document.data.KnowHubTopicDocumentRelation;
 import ai.knowhub.document.mapper.KnowHubDocumentMapper;
 import ai.knowhub.document.mapper.KnowHubDocumentProfileMapper;
+import ai.knowhub.document.mapper.KnowHubDocumentStructureNodeMapper;
 import ai.knowhub.document.mapper.KnowHubKnowledgeRouteTraceMapper;
 import ai.knowhub.document.mapper.KnowHubKnowledgeScopeNodeMapper;
 import ai.knowhub.document.mapper.KnowHubKnowledgeTopicNodeMapper;
@@ -25,6 +27,7 @@ import ai.knowhub.document.service.KnowledgeRouteIndexService;
 import ai.knowhub.document.service.KnowledgeRouteService;
 import ai.knowhub.enums.BusinessStatus;
 import ai.knowhub.enums.DocumentIndexStatusEnum;
+import ai.knowhub.enums.DocumentStructureNodeTypeEnum;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
@@ -41,8 +44,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.stream.Collectors;
 
 /**
@@ -93,20 +94,17 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
     /** 候选向量计算的批量大小（避免一次 embedding 太多导致超时） */
     private static final int ROUTE_EMBEDDING_BATCH_SIZE = 10;
 
-    /** 候选路由文本通常长期不变，缓存向量避免每次提问重复调用远端 embedding。 */
-    private static final ConcurrentMap<String, float[]> ROUTE_EMBEDDING_CACHE = new ConcurrentHashMap<>();
-
-    /** 防止长期频繁更新文档时缓存无界增长。 */
-    private static final int ROUTE_EMBEDDING_CACHE_MAX_SIZE = 20_000;
-
-    /** 自动知识路由默认保留的文档候选数，避免过早收缩导致 gold document 被截断。 */
-    private static final int ROUTE_DOCUMENT_CANDIDATE_LIMIT = 100;
+    /** 未显式指定候选池大小时的兼容默认值。 */
+    private static final int DEFAULT_ROUTE_DOCUMENT_CANDIDATE_LIMIT = 100;
 
     /** 文档 Mapper */
     private final KnowHubDocumentMapper documentMapper;
 
     /** 文档画像 Mapper */
     private final KnowHubDocumentProfileMapper documentProfileMapper;
+
+    /** 文档结构节点 Mapper，用章节标题补足 LLM 画像未覆盖的长尾主题。 */
+    private final KnowHubDocumentStructureNodeMapper documentStructureNodeMapper;
 
     /** 知识范围 Mapper */
     private final KnowHubKnowledgeScopeNodeMapper scopeNodeMapper;
@@ -125,6 +123,9 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
 
     /** 知识路由索引服务的延迟提供者（ES 实现，可能未启用） */
     private final ObjectProvider<KnowledgeRouteIndexService> knowledgeRouteIndexServiceProvider;
+
+    /** 候选路由向量的 JVM + Redis 两级缓存。 */
+    private final RouteEmbeddingCache routeEmbeddingCache;
 
     /** 百度 UID 生成器 */
     private final UidGenerator uidGenerator;
@@ -150,6 +151,15 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
 
     @Override
     public KnowledgeRouteDecision route(String question, String rewriteQuestion, String historyContext) {
+        return route(question, rewriteQuestion, historyContext, DEFAULT_ROUTE_DOCUMENT_CANDIDATE_LIMIT);
+    }
+
+    @Override
+    public KnowledgeRouteDecision route(String question,
+                                        String rewriteQuestion,
+                                        String historyContext,
+                                        int documentCandidateLimit) {
+        int resolvedDocumentCandidateLimit = Math.max(1, documentCandidateLimit);
         RouteQueryContext queryContext = buildQueryContext(question, rewriteQuestion, historyContext);
         KnowledgeRouteDecision decision = new KnowledgeRouteDecision();
         if (queryContext.queryTerms().isEmpty()) {
@@ -160,7 +170,12 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
         // 三级路由：Scope -> Topic -> Document
         List<ScopeRouteCandidate> scopeCandidates = rankScopes(queryContext);
         List<TopicRouteCandidate> topicCandidates = rankTopics(queryContext, scopeCandidates);
-        List<DocumentRouteCandidate> documentCandidates = rankDocuments(queryContext, scopeCandidates, topicCandidates);
+        List<DocumentRouteCandidate> documentCandidates = rankDocuments(
+            queryContext,
+            scopeCandidates,
+            topicCandidates,
+            resolvedDocumentCandidateLimit
+        );
         decision.setScopes(scopeCandidates);
         decision.setTopics(topicCandidates);
         decision.setDocuments(documentCandidates);
@@ -350,7 +365,7 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
             .filter(item -> item.maxScore > 0D || queryContext.semanticEnabled())
             .map(item -> new ScopeRouteCandidate(item.scopeCode, item.scopeName, scoreToBigDecimal(item.maxScore), item.reason))
             .sorted((left, right) -> right.getScore().compareTo(left.getScore()))
-            .limit(ROUTE_DOCUMENT_CANDIDATE_LIMIT)
+            .limit(DEFAULT_ROUTE_DOCUMENT_CANDIDATE_LIMIT)
             .toList();
     }
 
@@ -453,7 +468,8 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
      */
     private List<DocumentRouteCandidate> rankDocuments(RouteQueryContext queryContext,
                                                        List<ScopeRouteCandidate> scopeCandidates,
-                                                       List<TopicRouteCandidate> topicCandidates) {
+                                                       List<TopicRouteCandidate> topicCandidates,
+                                                       int documentCandidateLimit) {
         List<KnowHubDocument> documents = listRetrievableDocuments();
         if (documents.isEmpty()) {
             return List.of();
@@ -469,13 +485,30 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
             .stream()
             .collect(Collectors.groupingBy(KnowHubTopicDocumentRelation::getTopicCode,
                 Collectors.toMap(KnowHubTopicDocumentRelation::getDocumentId, item -> item, (left, right) -> right)));
+        Map<Long, String> structureRouteTextMap = collectStructureRouteTexts(
+            documentStructureNodeMapper.selectList(new LambdaQueryWrapper<KnowHubDocumentStructureNode>()
+                .select(
+                    KnowHubDocumentStructureNode::getDocumentId,
+                    KnowHubDocumentStructureNode::getNodeNo,
+                    KnowHubDocumentStructureNode::getTitle,
+                    KnowHubDocumentStructureNode::getAnchorText
+                )
+                .eq(KnowHubDocumentStructureNode::getStatus, BusinessStatus.YES.getCode())
+                .eq(KnowHubDocumentStructureNode::getNodeType, DocumentStructureNodeTypeEnum.SECTION.getCode())
+                .orderByAsc(KnowHubDocumentStructureNode::getDocumentId)
+                .orderByAsc(KnowHubDocumentStructureNode::getNodeNo))
+        );
         String topScopeCode = scopeCandidates.isEmpty() ? "" : scopeCandidates.get(0).getScopeCode();
         String topTopicCode = topicCandidates.isEmpty() ? "" : topicCandidates.get(0).getTopicCode();
         List<DocumentRouteMaterial> materials = documents.stream()
-            .map(document -> buildDocumentRouteMaterial(document, profileMap.get(document.getId())))
+            .map(document -> buildDocumentRouteMaterial(
+                document,
+                profileMap.get(document.getId()),
+                structureRouteTextMap.get(document.getId())
+            ))
             .toList();
         List<Double> semanticScores = computeSemanticScores(queryContext, materials.stream().map(DocumentRouteMaterial::routeText).toList());
-        Map<Long, Double> lexicalScores = searchLexicalScores(queryContext.routingText(), "document", ROUTE_DOCUMENT_CANDIDATE_LIMIT).stream()
+        Map<Long, Double> lexicalScores = searchLexicalScores(queryContext.routingText(), "document", documentCandidateLimit).stream()
             .filter(hit -> hit.documentId() != null)
             .collect(Collectors.toMap(KnowledgeRouteIndexService.RouteLexicalHit::documentId, KnowledgeRouteIndexService.RouteLexicalHit::score, (left, right) -> left));
         return documents.stream()
@@ -492,7 +525,7 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
             ))
             .filter(candidate -> candidate.getScore().compareTo(BigDecimal.ZERO) > 0 || queryContext.semanticEnabled())
             .sorted((left, right) -> right.getScore().compareTo(left.getScore()))
-            .limit(ROUTE_DOCUMENT_CANDIDATE_LIMIT)
+            .limit(documentCandidateLimit)
             .toList();
     }
 
@@ -643,7 +676,9 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
     }
 
     /** 构建文档路由素材（拼接文档的所有路由文本） */
-    private DocumentRouteMaterial buildDocumentRouteMaterial(KnowHubDocument document, KnowHubDocumentProfile profile) {
+    private DocumentRouteMaterial buildDocumentRouteMaterial(KnowHubDocument document,
+                                                              KnowHubDocumentProfile profile,
+                                                              String structureRouteText) {
         return new DocumentRouteMaterial(
             document.getId(),
             join(
@@ -655,9 +690,44 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
                 profile == null ? "" : profile.getDocumentSummary(),
                 profile == null ? "" : profile.getCoreTopics(),
                 profile == null ? "" : profile.getExampleQuestions(),
-                profile == null ? "" : profile.getDocumentType()
+                profile == null ? "" : profile.getDocumentType(),
+                structureRouteText
             )
         );
+    }
+
+    /**
+     * 每份文档最多保留 40 个去重章节标题/锚点，覆盖画像 Top-N 之外的长尾主题，同时限制
+     * embedding 输入体积。节点已按文档和正文顺序查询，因此截断结果稳定可复现。
+     */
+    static Map<Long, String> collectStructureRouteTexts(List<KnowHubDocumentStructureNode> nodes) {
+        if (nodes == null || nodes.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, LinkedHashSet<String>> termsByDocument = new LinkedHashMap<>();
+        for (KnowHubDocumentStructureNode node : nodes) {
+            if (node == null || node.getDocumentId() == null) {
+                continue;
+            }
+            LinkedHashSet<String> terms = termsByDocument.computeIfAbsent(
+                node.getDocumentId(), ignored -> new LinkedHashSet<>());
+            if (terms.size() >= 40) {
+                continue;
+            }
+            if (StrUtil.isNotBlank(node.getTitle())) {
+                terms.add(node.getTitle().trim());
+            }
+            if (terms.size() < 40 && StrUtil.isNotBlank(node.getAnchorText())) {
+                terms.add(node.getAnchorText().trim());
+            }
+        }
+        return termsByDocument.entrySet().stream()
+            .collect(Collectors.toMap(
+                Map.Entry::getKey,
+                entry -> String.join(" ", entry.getValue()),
+                (left, right) -> left,
+                LinkedHashMap::new
+            ));
     }
 
     /** 在素材列表中查找指定文档ID的索引 */
@@ -877,14 +947,12 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
             for (int index = 0; index < normalizedRouteTexts.size(); index++) {
                 scores.add(0D);
             }
-            if (ROUTE_EMBEDDING_CACHE.size() > ROUTE_EMBEDDING_CACHE_MAX_SIZE) {
-                ROUTE_EMBEDDING_CACHE.clear();
-            }
+            Map<String, float[]> cachedEmbeddings = routeEmbeddingCache.getAll(normalizedRouteTexts);
             List<Integer> missingIndexes = new ArrayList<>();
             List<String> missingTexts = new ArrayList<>();
             for (int index = 0; index < normalizedRouteTexts.size(); index++) {
                 String routeText = normalizedRouteTexts.get(index);
-                float[] cachedEmbedding = ROUTE_EMBEDDING_CACHE.get(routeText);
+                float[] cachedEmbedding = cachedEmbeddings.get(routeText.trim());
                 if (cachedEmbedding == null) {
                     missingIndexes.add(index);
                     missingTexts.add(routeText);
@@ -894,6 +962,7 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
                 }
             }
             // 只为首次出现或发生变化的候选文本分批计算 embedding。
+            Map<String, float[]> generatedEmbeddings = new LinkedHashMap<>();
             int totalBatchCount = (missingTexts.size() + ROUTE_EMBEDDING_BATCH_SIZE - 1) / ROUTE_EMBEDDING_BATCH_SIZE;
             for (int startIndex = 0; startIndex < missingTexts.size(); startIndex += ROUTE_EMBEDDING_BATCH_SIZE) {
                 int endIndex = Math.min(startIndex + ROUTE_EMBEDDING_BATCH_SIZE, missingTexts.size());
@@ -910,10 +979,11 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
                     int scoreIndex = missingIndexes.get(missingIndex);
                     String routeText = missingTexts.get(missingIndex);
                     float[] embedding = embeddings.get(batchIndex);
-                    ROUTE_EMBEDDING_CACHE.putIfAbsent(routeText, embedding);
+                    generatedEmbeddings.put(routeText, embedding);
                     scores.set(scoreIndex, cosineSimilarity(queryContext.queryEmbedding(), embedding));
                 }
             }
+            routeEmbeddingCache.putAll(generatedEmbeddings);
             return scores;
         }
         catch (Exception exception) {
@@ -928,11 +998,11 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
             return 0D;
         }
         String normalizedRouteText = StrUtil.blankToDefault(routeText, "").trim();
-        float[] routeEmbedding = ROUTE_EMBEDDING_CACHE.get(normalizedRouteText);
+        float[] routeEmbedding = routeEmbeddingCache.get(normalizedRouteText);
         if (routeEmbedding == null) {
             routeEmbedding = embedSingle(normalizedRouteText);
             if (routeEmbedding != null) {
-                ROUTE_EMBEDDING_CACHE.putIfAbsent(normalizedRouteText, routeEmbedding);
+                routeEmbeddingCache.put(normalizedRouteText, routeEmbedding);
             }
         }
         if (routeEmbedding == null) {

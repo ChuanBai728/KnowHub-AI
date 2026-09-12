@@ -67,4 +67,6 @@ evaluation/tools/*
 !evaluation/tools/test_composite_eval.py
 !evaluation/tools/score_composite_eval.py
 !evaluation/tools/test_score_composite_eval.py
+!evaluation/tools/benchmark_neo4j_graph.py
+!evaluation/tools/test_benchmark_neo4j_graph.py
 

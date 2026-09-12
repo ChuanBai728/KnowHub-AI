@@ -55,6 +55,22 @@ class ChatPreparationOrchestratorTest {
     }
 
     @Test
+    void routeCandidatePoolUsesTheLargerLowConfidenceLimit() {
+        properties.setRouteDocumentTopK(20);
+        properties.setLowConfidenceRouteDocumentTopK(200);
+
+        assertEquals(200, orchestrator.resolveRouteCandidatePoolSize());
+    }
+
+    @Test
+    void lowConfidenceMultiDocumentScopeSkipsUnanchoredGraphNavigation() {
+        assertTrue(ChatPreparationOrchestrator.shouldSkipStructureNavigation(false, null, null));
+        assertTrue(ChatPreparationOrchestrator.shouldSkipStructureNavigation(false, 1L, null));
+        assertFalse(ChatPreparationOrchestrator.shouldSkipStructureNavigation(false, 1L, 101L));
+        assertTrue(ChatPreparationOrchestrator.shouldSkipStructureNavigation(true, 1L, 101L));
+    }
+
+    @Test
     void explicitDocumentNameTakesPriorityAndDoesNotClarify() {
         KnowledgeRouteDecision decision = decision(
             new BigDecimal("0.20"),

@@ -189,7 +189,7 @@ public class Neo4jDocumentStructureGraphService implements DocumentStructureGrap
         }
         try (Session session = session()) {
             return session.run(
-                    "MATCH (n:KnowHubDocumentItem {documentId: $documentId, sectionNodeId: $sectionNodeId}) RETURN n ORDER BY n.nodeNo",
+                    "MATCH (n:KnowHubDocumentItem {documentId: $documentId, parentNodeId: $sectionNodeId}) RETURN n ORDER BY n.nodeNo",
                     Values.parameters("documentId", documentId, "sectionNodeId", sectionNodeId)
                 )
                 .list(this::toItem);
@@ -250,7 +250,9 @@ public class Neo4jDocumentStructureGraphService implements DocumentStructureGrap
             .parseTaskId(longValue(map.get("parseTaskId")))
             .nodeNo(intValue(map.get("nodeNo")))
             .nodeType(text(map.get("nodeType")))
-            .sectionNodeId(longValue(map.get("sectionNodeId")))
+            .sectionNodeId(longValue(map.containsKey("sectionNodeId")
+                ? map.get("sectionNodeId")
+                : map.get("parentNodeId")))
             .prevSiblingNodeId(longValue(map.get("prevSiblingNodeId")))
             .nextSiblingNodeId(longValue(map.get("nextSiblingNodeId")))
             .title(text(map.get("title")))

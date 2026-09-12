@@ -1,6 +1,10 @@
 package ai.knowhub.document.service.impl;
 
+import ai.knowhub.document.data.KnowHubDocumentStructureNode;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -67,5 +71,27 @@ class KnowledgeRouteServiceImplTest {
         assertFalse(routingText.contains("\n"), routingText);
         assertTrue(routingText.startsWith("问题 "), routingText);
         assertTrue(routingText.contains("用户：上一轮"), routingText);
+    }
+
+    @Test
+    void structureTitlesAddLongTailTopicsMissingFromTheGeneratedProfile() {
+        KnowHubDocumentStructureNode root = structureNode(1L, "Apache Dubbo 负载均衡", "Apache Dubbo 负载均衡");
+        KnowHubDocumentStructureNode p2c = structureNode(1L, "P2C Load Balance", "P2C Load Balance");
+        KnowHubDocumentStructureNode another = structureNode(2L, "部署应用", "Kubernetes 部署应用");
+
+        Map<Long, String> routeTexts = KnowledgeRouteServiceImpl.collectStructureRouteTexts(
+            List.of(root, p2c, another)
+        );
+
+        assertEquals("Apache Dubbo 负载均衡 P2C Load Balance", routeTexts.get(1L));
+        assertEquals("部署应用 Kubernetes 部署应用", routeTexts.get(2L));
+    }
+
+    private KnowHubDocumentStructureNode structureNode(Long documentId, String title, String anchorText) {
+        KnowHubDocumentStructureNode node = new KnowHubDocumentStructureNode();
+        node.setDocumentId(documentId);
+        node.setTitle(title);
+        node.setAnchorText(anchorText);
+        return node;
     }
 }

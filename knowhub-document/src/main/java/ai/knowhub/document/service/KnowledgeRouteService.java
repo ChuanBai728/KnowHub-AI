@@ -52,6 +52,23 @@ public interface KnowledgeRouteService {
     KnowledgeRouteDecision route(String question, String rewriteQuestion, String historyContext);
 
     /**
+     * 执行知识路由，并显式指定需要返回的文档候选池大小。
+     *
+     * 低置信路由需要比高置信路由更大的候选池。由调用方传入该上限，避免路由服务内部先按
+     * 固定值截断，导致上层的低置信扩范围配置实际上无法生效。
+     *
+     * @param question              用户的原始问题
+     * @param rewriteQuestion       经过改写/优化后的问题
+     * @param historyContext        最近的历史上下文，可为空
+     * @param documentCandidateLimit 文档候选池上限，至少为 1
+     * @return 路由决策结果
+     */
+    KnowledgeRouteDecision route(String question,
+                                  String rewriteQuestion,
+                                  String historyContext,
+                                  int documentCandidateLimit);
+
+    /**
      * 记录影子路由
      *
      * 功能说明：
