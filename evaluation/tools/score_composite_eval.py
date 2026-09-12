@@ -1,5 +1,23 @@
 #!/usr/bin/env python3
-"""Score the 300-case KnowHub composite evaluation from live observations."""
+"""Score the 300-case KnowHub composite evaluation from live observations.
+
+Run caliber
+-----------
+评分依据观测记录自带的 `run_config`（由 enterprise_rag_bench_server_eval 写入）判定口径：
+
+- `routing_enabled` / `unknown`（旧观测文件没有该字段）：行为与引入本机制之前完全一致，
+  保证历史结果可复现；
+- `forced_retrieval`（`force-retrieval-mode: true`）：技术文档子集的「路由准确率」结构性
+  失效，此时**不静默改分**——数字照常输出，但结果里标记 `route_accuracy_applicable=false`、
+  写入 `warnings`，并在 Markdown 头部与指标行就地告警。该子集分不可与生产口径对照。
+
+Retrieval scope
+---------------
+`summarize()` 的 `retrieval_scope` 块报告真实检索范围（候选数与范围数的均值/中位/P95），
+并**按高/低置信分组**：实测分布是双峰的，只看均值会掩盖「多数问题其实退回了兜底范围」。
+取值优先用观测记录里的扁平字段，缺失时回退到路由阶段快照，因此 2026-09-12 那批观测文件
+无需重跑即可回溯出真实范围。
+"""
 
 from __future__ import annotations
 
@@ -16,6 +34,20 @@ from typing import Any, Iterable
 
 
 KNOWN_MODES = {"RETRIEVAL", "GRAPH_ONLY", "GRAPH_THEN_EVIDENCE", "CLARIFICATION", "REACT_AGENT"}
+
+# 与 enterprise_rag_bench_server_eval.ROUTE_SCOPE_SNAPSHOT_KEYS 保持一致。两份拷贝是刻意的：
+# 评分脚本不应依赖 runner（也就会连带依赖 requests），而且二者分别在 unittest discover 下
+# 独立加载。两边的测试用同一组快照样本锁住行为一致。
+ROUTE_SCOPE_SNAPSHOT_KEYS = (
+    "routeStatus",
+    "candidateDocumentCount",
+    "retrievalScopeDocumentCount",
+    "knowledgeRouteBypassed",
+)
+
+CALIBER_FORCED_RETRIEVAL = "forced_retrieval"
+CALIBER_ROUTING_ENABLED = "routing_enabled"
+CALIBER_UNKNOWN = "unknown"
 REFUSAL_MARKERS = (
     "无法回答", "无法从", "没有足够", "资料不足", "信息不足", "证据不足",
     "未找到", "不能给出", "暂时不能", "无法确定", "无法确认",
@@ -64,6 +96,11 @@ def percentile(values: Iterable[float], q: float) -> float:
     if low == high:
         return float(items[low])
     return float(items[low] + (items[high] - items[low]) * (position - low))
+
+
+def median(values: Iterable[float]) -> float:
+    items = list(values)
+    return float(statistics.median(items)) if items else 0.0
 
 
 def normalize_text(value: Any) -> str:
@@ -226,14 +263,94 @@ def execution_mode(observation: dict[str, Any]) -> str:
     return ""
 
 
+def truthy(value: Any) -> bool:
+    return value is True or str(value).lower() == "true"
+
+
 def retrieval_scope(observation: dict[str, Any]) -> str:
     detail = observation.get("exchange_detail") or {}
     for stage in detail.get("stageTraces") or []:
         snapshot = stage.get("snapshot") or {}
-        value = snapshot.get("fullCorpusRetrieval")
-        if value is True or str(value).lower() == "true":
+        if truthy(snapshot.get("fullCorpusRetrieval")):
             return "FULL_CORPUS"
     return "ROUTE_CANDIDATES"
+
+
+def as_count(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def route_scope_snapshot(stage_traces: list[dict[str, Any]] | None) -> dict[str, Any]:
+    """stageTraces 里有两条 ROUTE 阶段，只有知识范围路由那条带候选数量信息，按键集判别。"""
+    for stage in stage_traces or []:
+        snapshot = stage.get("snapshot") if isinstance(stage, dict) else None
+        if isinstance(snapshot, dict) and any(key in snapshot for key in ROUTE_SCOPE_SNAPSHOT_KEYS):
+            return snapshot
+    return {}
+
+
+def confidence_bucket(status: Any) -> str:
+    normalized = str(status or "").upper()
+    if normalized == "SUCCESS":
+        return "high"
+    if normalized == "LOW_CONFIDENCE":
+        return "low"
+    return "unknown"
+
+
+def route_scope_metrics(observation: dict[str, Any]) -> dict[str, Any]:
+    """真实检索范围。
+
+    优先读观测记录里的扁平字段；缺失时回退到路由阶段快照——2026-09-12 那批观测文件没有
+    扁平字段但已带快照，回退让它们无需重跑就能算出真实范围。
+    """
+    flat_count = observation.get("retrieval_scope_document_count")
+    status = observation.get("route_status")
+    if flat_count is not None or status:
+        return {
+            "route_candidate_document_count": as_count(observation.get("route_candidate_document_count")),
+            "retrieval_scope_document_count": as_count(flat_count),
+            "route_status": str(status or ""),
+            "route_confidence": observation.get("route_confidence"),
+            "route_confidence_bucket": confidence_bucket(status),
+        }
+    detail = observation.get("exchange_detail") or {}
+    snapshot = route_scope_snapshot(detail.get("stageTraces"))
+    return {
+        "route_candidate_document_count": as_count(snapshot.get("candidateDocumentCount")),
+        "retrieval_scope_document_count": as_count(snapshot.get("retrievalScopeDocumentCount")),
+        "route_status": str(snapshot.get("routeStatus") or ""),
+        "route_confidence": snapshot.get("confidence"),
+        "route_confidence_bucket": confidence_bucket(snapshot.get("routeStatus")),
+    }
+
+
+def run_config_of(observations: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    """取观测记录里自带的运行口径；旧文件没有该键时返回空字典。"""
+    for observation in observations:
+        config = observation.get("run_config")
+        if isinstance(config, dict) and config:
+            return config
+    return {}
+
+
+def run_caliber(run_config: dict[str, Any]) -> str:
+    """把运行口径归成三类。
+
+    只有明确记录为强制检索时才降级路由准确率；未记录（旧观测文件）一律按今天的行为处理，
+    保证历史结果可复现。
+    """
+    forced = run_config.get("force_retrieval_mode")
+    if forced is True:
+        return CALIBER_FORCED_RETRIEVAL
+    if forced is False:
+        return CALIBER_ROUTING_ENABLED
+    return CALIBER_UNKNOWN
 
 
 def reference_document_ids(observation: dict[str, Any], runtime_to_official: dict[str, str]) -> list[str]:
@@ -307,6 +424,7 @@ def score_case(gold: dict[str, Any], observation: dict[str, Any] | None,
         "route_pass": float(mode in allowed_modes) if route_scored else None,
         "first_response_time_ms": exchange.get("firstResponseTimeMs"),
         "total_response_time_ms": exchange.get("totalResponseTimeMs"),
+        **route_scope_metrics(observation),
     }
 
 
@@ -314,7 +432,7 @@ def selected(rows: list[dict[str, Any]], key: str) -> list[float]:
     return [float(row[key]) for row in rows if row.get(key) is not None]
 
 
-def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
+def summarize(rows: list[dict[str, Any]], route_applicable: bool = True) -> dict[str, Any]:
     retrieval = [row for row in rows if row["retrieval_expected"]]
     full_corpus_retrieval = [row for row in retrieval if row["retrieval_scope"] == "FULL_CORPUS"]
     route_scoped_retrieval = [row for row in retrieval if row["retrieval_scope"] == "ROUTE_CANDIDATES"]
@@ -355,6 +473,9 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "forbidden_claim_cases": len(forbidden),
         "forbidden_claim_avoidance_rate": mean(selected(forbidden, "forbidden_avoidance")),
         "route_accuracy": mean(selected(rows, "route_pass")),
+        # 口径异常（强制检索）时该指标结构性失效，但此处不静默改分：数字照常输出，
+        # 由 main() 写入 warnings 并在报告头部醒目标注，避免"看起来像正常分数"。
+        "route_accuracy_applicable": route_applicable,
         "clarification_cases": len(clarifications),
         "clarification_recall": mean(
             float(row["execution_mode"] == "CLARIFICATION") for row in clarifications
@@ -366,6 +487,48 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "total_p95": percentile(total_latencies, 0.95),
             "total_mean": statistics.fmean(total_latencies) if total_latencies else 0.0,
         },
+        "retrieval_scope": retrieval_scope_summary(rows),
+    }
+
+
+def retrieval_scope_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """候选/实际检索范围统计，必须按置信度分组。
+
+    实测分布是双峰的（16 题 20 篇 + 34 题 100 篇），只看均值会掩盖"大多数问题其实没拿到
+    精确限域"这一事实，而测试指南明确要求低置信样本不能被平均数掩盖。
+    """
+    scoped = [row for row in rows if row.get("retrieval_scope_document_count") is not None]
+    candidates = [row for row in rows if row.get("route_candidate_document_count") is not None]
+    high = [row for row in scoped if row.get("route_confidence_bucket") == "high"]
+    low = [row for row in scoped if row.get("route_confidence_bucket") == "low"]
+    unknown = [row for row in scoped if row.get("route_confidence_bucket") == "unknown"]
+
+    def scope_values(items: list[dict[str, Any]]) -> list[float]:
+        return [float(row["retrieval_scope_document_count"]) for row in items]
+
+    return {
+        "cases": len(scoped),
+        "candidate_document_count_mean": mean(
+            float(row["route_candidate_document_count"]) for row in candidates
+        ),
+        "candidate_document_count_median": median(
+            float(row["route_candidate_document_count"]) for row in candidates
+        ),
+        "candidate_document_count_p95": percentile(
+            [float(row["route_candidate_document_count"]) for row in candidates], 0.95
+        ),
+        "scope_document_count_mean": mean(scope_values(scoped)),
+        "scope_document_count_median": median(scope_values(scoped)),
+        "scope_document_count_p95": percentile(scope_values(scoped), 0.95),
+        "high_confidence_cases": len(high),
+        "high_confidence_scope_mean": mean(scope_values(high)),
+        "high_confidence_scope_median": median(scope_values(high)),
+        "high_confidence_scope_p95": percentile(scope_values(high), 0.95),
+        "low_confidence_cases": len(low),
+        "low_confidence_scope_mean": mean(scope_values(low)),
+        "low_confidence_scope_median": median(scope_values(low)),
+        "low_confidence_scope_p95": percentile(scope_values(low), 0.95),
+        "unknown_confidence_cases": len(unknown),
     }
 
 
@@ -385,17 +548,62 @@ def fmt(value: Any) -> str:
     return f"{float(value) * 100:.2f}%"
 
 
+def fmt_number(value: Any, digits: int = 2) -> str:
+    if value is None:
+        return "N/A"
+    return f"{float(value):.{digits}f}"
+
+
+def describe_caliber(run_config: dict[str, Any]) -> str:
+    if not run_config:
+        return "未记录"
+    parts = [
+        f"force-retrieval-mode={run_config.get('force_retrieval_mode')}",
+        f"force-retrieval-full-corpus={run_config.get('force_retrieval_full_corpus')}",
+        f"clarification-enabled={run_config.get('clarification_enabled')}",
+        f"keyword-channel-enabled={run_config.get('keyword_channel_enabled')}",
+        f"rerank-enabled={run_config.get('rerank_enabled')}",
+    ]
+    if run_config.get("rrf_k") is not None:
+        parts.append(
+            "rrf(k={}, vector={}, keyword={}, adaptive={})".format(
+                run_config.get("rrf_k"),
+                run_config.get("rrf_vector_weight"),
+                run_config.get("rrf_keyword_weight"),
+                run_config.get("rrf_adaptive_keyword_weight_enabled"),
+            )
+        )
+    if run_config.get("sql_log_impl"):
+        parts.append(f"sql-log={str(run_config['sql_log_impl']).rsplit('.', 1)[-1]}")
+    return " ".join(parts)
+
+
 def write_markdown(path: Path, result: dict[str, Any]) -> None:
     overall = result["overall"]
     is_subset = result.get("score_scope") == "observed_subset"
     score_label = "非正式子集分" if is_subset else "综合分"
+    # 数字照常显示（不静默改分），但在失效口径下就地标注，避免被当成正常指标引用。
+    route_suffix = (
+        "（强制检索口径下不具可比性，仅作诊断）"
+        if overall.get("route_accuracy_applicable") is False
+        else ""
+    )
     lines = [
         "# KnowHub 复合评测结果", "",
         f"- 完成率：{overall['completed']}/{overall['cases']}（{fmt(overall['completion_rate'])}）",
         f"- {score_label}：{result['composite_score']:.2f}/100", "",
+    ]
+    # 口径写在分数之前：读者必须先知道这份数字是按什么配置跑的，再看数字。
+    if result.get("run_caliber") and result["run_caliber"] != CALIBER_UNKNOWN:
+        lines.append(f"- 本次运行口径：{describe_caliber(result.get('run_config') or {})}")
+    for warning in result.get("warnings") or []:
+        lines.append(f"- **注意**：{warning}")
+    if result.get("run_caliber") and result["run_caliber"] != CALIBER_UNKNOWN:
+        lines.append("")
+    lines.extend([
         "| 子集 | 题数 | 子集分 | Recall@10 | MRR@10 | 答案通过率 | 拒答通过率 | 路由准确率 |",
         "|---|---:|---:|---:|---:|---:|---:|---:|",
-    ]
+    ])
     canonical_order = ("t2retrieval", "cmrc2018", "rgb", "technical_docs")
     component_order = [component for component in canonical_order if component in result["components"]]
     component_order.extend(sorted(set(result["components"]) - set(canonical_order)))
@@ -417,9 +625,20 @@ def write_markdown(path: Path, result: dict[str, Any]) -> None:
         f"- 严格事实覆盖率 / 严格答案通过率：{fmt(overall['strict_fact_recall'])} / {fmt(overall['strict_answer_pass_rate'])}",
         f"- 引用出现率 / 正确文档引用率：{fmt(overall['citation_presence_rate'])} / {fmt(overall['grounded_citation_rate'])}",
         f"- 拒答通过率 / 禁止事实规避率：{fmt(overall['abstention_pass_rate'])} / {fmt(overall['forbidden_claim_avoidance_rate'])}",
-        f"- 路由准确率 / 澄清召回率：{fmt(overall['route_accuracy'])} / {fmt(overall['clarification_recall'])}",
+        f"- 路由准确率 / 澄清召回率：{fmt(overall['route_accuracy'])}{route_suffix} / {fmt(overall['clarification_recall'])}",
         f"- 总延迟 P50 / P95：{overall['latency_ms']['total_p50']:.0f} ms / {overall['latency_ms']['total_p95']:.0f} ms", "",
     ])
+    scope = overall.get("retrieval_scope") or {}
+    if scope.get("cases"):
+        lines.extend([
+            f"- 检索范围（{scope['cases']} 题有记录）：均值 {fmt_number(scope['scope_document_count_mean'])} 篇 / "
+            f"中位 {fmt_number(scope['scope_document_count_median'])} 篇 / P95 {fmt_number(scope['scope_document_count_p95'])} 篇",
+            f"- 高置信路由（{scope['high_confidence_cases']} 题）：均值 {fmt_number(scope['high_confidence_scope_mean'])} 篇 / "
+            f"中位 {fmt_number(scope['high_confidence_scope_median'])} 篇",
+            f"- 低置信路由（{scope['low_confidence_cases']} 题）：均值 {fmt_number(scope['low_confidence_scope_mean'])} 篇 / "
+            f"中位 {fmt_number(scope['low_confidence_scope_median'])} 篇",
+            "",
+        ])
     if is_subset:
         lines.append("当前为 `--only-observed` 子集烟测，分数仅为已执行子集分的平均值，不是正式四子集等权综合分。")
     else:
@@ -451,19 +670,37 @@ def main(argv: list[str]) -> int:
         for item in state.get("items", []) if item.get("runtime_document_id")
     }
     rows = [score_case(item, observations_by_id.get(str(item["question_id"])), runtime_to_official) for item in gold]
+
+    # 运行口径来自观测记录本身（见 enterprise_rag_bench_server_eval.load_rag_run_config）。
+    # 旧观测文件没有该字段 → unknown → 行为与加这个机制之前完全一致。
+    run_config = run_config_of(observations_by_id.values())
+    caliber = run_caliber(run_config)
+    route_applicable = caliber != CALIBER_FORCED_RETRIEVAL
+    warnings: list[str] = []
+    if caliber == CALIBER_FORCED_RETRIEVAL:
+        warnings.append(
+            "本次运行 force-retrieval-mode=true：所有请求被强制走 RETRIEVAL 且澄清被关闭，"
+            "技术文档子集的「路由准确率」结构性失效（期望 GRAPH_ONLY/GRAPH_THEN_EVIDENCE/"
+            "CLARIFICATION 的题目必然判错），该子集分不可与生产口径或其他口径的结果对照。"
+        )
+
     groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
         groups[row["component"]].append(row)
     components = {}
     for component, component_rows in groups.items():
-        metrics = summarize(component_rows)
+        metrics = summarize(component_rows, route_applicable=route_applicable)
         metrics["score"] = component_score(component, metrics) * 100
         components[component] = metrics
     result = {
         "dataset": "knowhub-cn-composite-rag-v1",
         "score_scope": "observed_subset" if args.only_observed else "full_dataset",
         "official_composite": not args.only_observed,
-        "overall": summarize(rows),
+        "run_caliber": caliber,
+        "run_config": run_config,
+        "route_accuracy_applicable": route_applicable,
+        "warnings": warnings,
+        "overall": summarize(rows, route_applicable=route_applicable),
         "components": components,
         "composite_score": mean(item["score"] for item in components.values()),
         "score_formula": {

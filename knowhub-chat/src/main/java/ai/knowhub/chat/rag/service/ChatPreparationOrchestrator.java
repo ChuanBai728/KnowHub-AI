@@ -270,19 +270,24 @@ public class ChatPreparationOrchestrator {
         List<Long> routedDocumentIds = routedDocumentId == null ? List.of() : List.of(routedDocumentId);
         List<Long> routedTaskIds = routedTaskId == null ? List.of() : List.of(routedTaskId);
         if (chatMode == ChatQueryMode.AUTO_DOCUMENT) {
-            // 自动文档模式会先选知识范围；不确定时返回澄清问题，而不是随便选一份文档回答。
-            KnowledgeRouteDecision routeDecision = knowledgeRouteService.route(question, rewriteQuestion);
-            knowledgeRouteService.recordAutoRoute(conversationId, taskInfo.exchangeId(), question, rewriteQuestion, routeDecision);
+            boolean fullCorpusRetrieval = properties.isForceRetrievalFullCorpus();
+            boolean bypassKnowledgeRoute = shouldBypassKnowledgeRoute(chatMode);
             boolean contextualFollowUp = answerHistoryContext != null
                 && answerHistoryContext.isFollowUpQuestion()
                 && !answerHistoryContext.isEmpty();
-            List<DocumentRouteCandidate> candidateDocuments = selectAutoCandidates(
-                routeDecision,
-                question,
-                rewriteQuestion,
-                contextualFollowUp ? historySummary : ""
-            );
-            boolean fullCorpusRetrieval = properties.isForceRetrievalFullCorpus();
+            KnowledgeRouteDecision routeDecision = null;
+            List<DocumentRouteCandidate> candidateDocuments = List.of();
+            if (!bypassKnowledgeRoute) {
+                // 自动文档模式会先选知识范围；不确定时返回澄清问题，而不是随便选一份文档回答。
+                routeDecision = knowledgeRouteService.route(question, rewriteQuestion);
+                knowledgeRouteService.recordAutoRoute(conversationId, taskInfo.exchangeId(), question, rewriteQuestion, routeDecision);
+                candidateDocuments = selectAutoCandidates(
+                    routeDecision,
+                    question,
+                    rewriteQuestion,
+                    contextualFollowUp ? historySummary : ""
+                );
+            }
             // 如果需要澄清（范围不清晰），直接返回澄清模式的执行计划。
             // 评测/批处理模式下可关闭澄清，让问题继续进入 RAG 检索链路。
             if (shouldAskClarification(routeDecision, candidateDocuments, question, contextualFollowUp)) {
@@ -348,6 +353,7 @@ public class ChatPreparationOrchestrator {
                         "candidateDocumentCount", candidateDocuments.size(),
                         "retrievalScopeDocumentCount", retrievalScopeDocuments.size(),
                         "fullCorpusRetrieval", fullCorpusRetrieval,
+                        "knowledgeRouteBypassed", bypassKnowledgeRoute,
                         "explicitTopDocument", explicitTopDocument,
                         "confidentTopDocument", confidentTopDocument,
                         "topDocumentId", topDocument == null ? "" : StrUtil.blankToDefault(topDocument.getDocumentId(), ""),
@@ -869,6 +875,16 @@ public class ChatPreparationOrchestrator {
                                    List<DocumentRouteCandidate> candidateDocuments,
                                    String question) {
         return shouldAskClarification(routeDecision, candidateDocuments, question, false);
+    }
+
+    /**
+     * 纯检索评测已明确使用全语料范围时，知识路由结果不会参与后续检索，
+     * 因此跳过路由 embedding 和候选排序，避免无效外部调用污染检索延迟。
+     */
+    boolean shouldBypassKnowledgeRoute(ChatQueryMode chatMode) {
+        return chatMode == ChatQueryMode.AUTO_DOCUMENT
+            && properties.isForceRetrievalMode()
+            && properties.isForceRetrievalFullCorpus();
     }
 
     boolean shouldAskClarification(KnowledgeRouteDecision routeDecision,

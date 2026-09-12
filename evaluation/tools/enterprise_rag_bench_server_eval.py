@@ -5,6 +5,23 @@ Run a small EnterpriseRAG-Bench slice against a live KnowHub AI server.
 The script intentionally uses KnowHub's public HTTP APIs instead of writing
 directly to MySQL/PostgreSQL/Elasticsearch, so import and evaluation follow the
 same path as a real user upload.
+
+Run caliber
+-----------
+每条观测记录都会带上 `run_config`（见 `load_rag_run_config`），记录本次实际生效的
+RAG 配置，使报告能自证测量口径。用 `--rag-config-yaml` 指定要记录的文件；当后端以
+`evaluation/application-eval.yaml` 启动时务必指向它，否则记录的是默认的
+`knowhub-app/src/main/resources/application.yaml`，与后端实际运行配置不符。
+
+要点：`force-retrieval-mode: true` 会强制所有 AUTO_DOCUMENT 请求走 RETRIEVAL 并关闭
+澄清，此时「路由准确率」结构性失效（期望 GRAPH_ONLY/GRAPH_THEN_EVIDENCE/CLARIFICATION
+的题目必然判错），该指标在技术文档子集分里占 35%。报告头部会对该口径显式告警。
+
+Retrieval scope
+---------------
+实际参与检索的文档数只在路由阶段快照的 `retrievalScopeDocumentCount` 里，本脚本把它
+提取到观测记录顶层。不要用 `route_document_ids` 判断检索范围：它取自路由服务的中间候选
+列表，受 ROUTE_DOCUMENT_CANDIDATE_LIMIT = 100 约束，不反映最终范围。
 """
 
 from __future__ import annotations
@@ -24,12 +41,44 @@ from typing import Any, Iterable
 
 import requests
 
+try:
+    import yaml
+except ImportError:  # 缺失时降级为「不记录运行口径」，绝不中断评测
+    yaml = None
+
 
 DATASET_ID = "onyx-dot-app/EnterpriseRAG-Bench"
 RAW_QUESTIONS_URL = "https://raw.githubusercontent.com/onyx-dot-app/EnterpriseRAG-Bench/main/questions.jsonl"
 ALL_DOCUMENTS_ZIP_URL = "https://github.com/onyx-dot-app/EnterpriseRAG-Bench/releases/download/v1.0.0/all_documents.zip"
 PARSE_SUCCESS = 3
 INDEX_SUCCESS = 3
+
+# 运行口径白名单：(yaml 键路径, 记录键名)。只采集标量，把 answer-system-prompt 等
+# 巨型文本挡在每条观测记录之外。口径随观测记录落盘，使报告能自证它是按什么配置跑出来的。
+RAG_RUN_CONFIG_KEYS = (
+    ("force-retrieval-mode", "force_retrieval_mode"),
+    ("force-retrieval-full-corpus", "force_retrieval_full_corpus"),
+    ("clarification-enabled", "clarification_enabled"),
+    ("keyword-channel-enabled", "keyword_channel_enabled"),
+    ("rerank-enabled", "rerank_enabled"),
+    ("min-vector-similarity", "min_vector_similarity"),
+    ("route-document-top-k", "route_document_top_k"),
+    ("low-confidence-route-document-top-k", "low_confidence_route_document_top_k"),
+    ("rrf.k", "rrf_k"),
+    ("rrf.vector-weight", "rrf_vector_weight"),
+    ("rrf.keyword-weight", "rrf_keyword_weight"),
+    ("rrf.adaptive-keyword-weight-enabled", "rrf_adaptive_keyword_weight_enabled"),
+    ("rrf.exact-term-keyword-weight", "rrf_exact_term_keyword_weight"),
+)
+
+# 路由阶段快照的判别键。ROUTE 阶段在 stageTraces 里会出现两次（知识范围路由 + 执行路径
+# 路由），只有前者带这些键，所以必须按键集匹配，不能按 stageCode 或位置取。
+ROUTE_SCOPE_SNAPSHOT_KEYS = (
+    "routeStatus",
+    "candidateDocumentCount",
+    "retrievalScopeDocumentCount",
+    "knowledgeRouteBypassed",
+)
 
 
 def log(message: str) -> None:
@@ -600,7 +649,8 @@ def evaluate(client: KnowHubClient, output_dir: Path, chat_timeout: int,
              question_ids: set[str] | None = None,
              observations_file: str = "observations.jsonl",
              max_cases: int | None = None,
-             rerun_completed: bool = False) -> None:
+             rerun_completed: bool = False,
+             run_config: dict[str, Any] | None = None) -> None:
     state = json.loads((output_dir / "import-state.json").read_text(encoding="utf-8"))
     runtime_to_official = {
         str(item["runtime_document_id"]): item["doc_id"]
@@ -718,6 +768,11 @@ def evaluate(client: KnowHubClient, output_dir: Path, chat_timeout: int,
             }
             route_runtime_ids = extract_route_document_ids(route_trace)
             route_official_ids = [runtime_to_official.get(doc_id, doc_id) for doc_id in route_runtime_ids]
+            # 实际检索范围只存在于路由阶段快照里，必须单独取出来；route_document_ids 取自
+            # 路由服务的中间候选（硬上限 100），无法反映最终范围。
+            route_scope = extract_route_scope(
+                route_scope_snapshot(exchange_detail.get("stageTraces") or [])
+            )
             observation = {
                 "question_id": question["question_id"],
                 "question": question["question"],
@@ -748,6 +803,11 @@ def evaluate(client: KnowHubClient, output_dir: Path, chat_timeout: int,
                 "channel_executions": channel_executions,
                 "exchange_detail": exchange_detail,
             }
+            observation.update(route_scope)
+            # 按条件写入：用「键不存在」表达该记录早于本机制或配置不可读，
+            # 而不是写一个空字典（那与「写了一半失败」无法区分）。
+            if run_config:
+                observation["run_config"] = run_config
             handle.write(json.dumps(observation, ensure_ascii=False) + "\n")
             handle.flush()
 
@@ -760,7 +820,8 @@ def evaluate(client: KnowHubClient, output_dir: Path, chat_timeout: int,
     except Exception as exc:  # noqa: BLE001
         log(f"Stage benchmark fetch failed: {exc}")
 
-    write_report(output_dir)
+    report_prefix = "report" if Path(observations_file).name == "observations.jsonl" else f"report-{Path(observations_file).stem}"
+    write_report(output_dir, observations_file, report_prefix)
 
 
 def metric_recall(expected: list[str], retrieved: list[str], k: int) -> float:
@@ -804,6 +865,16 @@ def as_float(value: Any) -> float | None:
         return None
 
 
+def as_int(value: Any) -> int | None:
+    """路由快照里的计数是字符串（"candidateDocumentCount": "100"），需要归一成 int。"""
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def fetch_route_trace(client: KnowHubClient, conversation_id: str, exchange_id: str | None) -> dict[str, Any]:
     page = client.post("/api/v1/manage/knowledge/route/trace/page/query", {
         "conversationId": conversation_id,
@@ -843,6 +914,57 @@ def extract_route_document_ids(route_trace: dict[str, Any]) -> list[str]:
     if selected is not None:
         result.insert(0, str(selected))
     return unique_in_order(result)
+
+
+def route_scope_snapshot(stage_traces: list[dict[str, Any]] | None) -> dict[str, Any]:
+    """取出知识范围路由阶段的快照。
+
+    stageTraces 里有两条 stageCode == "ROUTE" 的阶段：第一条是知识范围路由（带候选数量等
+    信息），第二条是执行路径路由（只有 executionMode/navigationSummary）。因此按快照键集
+    判别，而不是按 stageCode 或位置。
+    """
+    for stage in stage_traces or []:
+        snapshot = stage.get("snapshot") if isinstance(stage, dict) else None
+        if isinstance(snapshot, dict) and any(key in snapshot for key in ROUTE_SCOPE_SNAPSHOT_KEYS):
+            return snapshot
+    return {}
+
+
+def extract_route_scope(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """把路由快照归一成扁平字段。
+
+    retrieval_scope_document_count 才是实际参与检索的文档数；route_document_ids 取自路由
+    服务的中间候选列表（受 ROUTE_DOCUMENT_CANDIDATE_LIMIT = 100 约束），不反映最终范围。
+    """
+    if not snapshot:
+        return {}
+    return {
+        "route_candidate_document_count": as_int(snapshot.get("candidateDocumentCount")),
+        "retrieval_scope_document_count": as_int(snapshot.get("retrievalScopeDocumentCount")),
+        "route_status": str(snapshot.get("routeStatus") or ""),
+        "route_confidence": as_float(snapshot.get("confidence")),
+        "full_corpus_retrieval": bool(snapshot.get("fullCorpusRetrieval")),
+        "knowledge_route_bypassed": bool(snapshot.get("knowledgeRouteBypassed")),
+    }
+
+
+def observation_route_scope(observation: dict[str, Any]) -> dict[str, Any]:
+    """观测记录里的检索范围：扁平字段优先，缺失时回退到路由阶段快照。
+
+    回退让 2026-09-12 之前那批只有快照、没有扁平字段的观测文件也能算出真实范围。
+    """
+    if (
+        observation.get("retrieval_scope_document_count") is not None
+        or observation.get("route_status")
+    ):
+        return extract_route_scope({
+            "candidateDocumentCount": observation.get("route_candidate_document_count"),
+            "retrievalScopeDocumentCount": observation.get("retrieval_scope_document_count"),
+            "routeStatus": observation.get("route_status"),
+            "confidence": observation.get("route_confidence"),
+        })
+    detail = observation.get("exchange_detail") or {}
+    return extract_route_scope(route_scope_snapshot(detail.get("stageTraces")))
 
 
 def mean(values: list[float]) -> float:
@@ -889,14 +1011,90 @@ def load_admin_auth_from_yaml(path: Path) -> tuple[str | None, str | None]:
     return username, password
 
 
-def write_report(output_dir: Path) -> None:
-    observations_path = output_dir / "observations.jsonl"
+def load_rag_run_config(config_path: Path | None) -> dict[str, Any]:
+    """采集本次运行生效的 RAG 口径，随观测记录落盘，使报告能自证配置。
+
+    只取白名单里的标量键（见 RAG_RUN_CONFIG_KEYS），避免把 answer-system-prompt 之类
+    的巨型文本写进每条记录。任何失败（缺文件、YAML 不可用、解析报错、结构不符）都返回
+    空字典而不是抛异常——评测不应因为读不到配置而中断。
+    """
+    if yaml is None or config_path is None:
+        return {}
+    path = Path(config_path)
+    if not path.exists():
+        return {}
+    try:
+        document = yaml.safe_load(path.read_text(encoding="utf-8", errors="replace"))
+    except Exception:
+        return {}
+    if not isinstance(document, dict):
+        return {}
+
+    rag = ((document.get("app") or {}).get("chat") or {}).get("rag")
+    rag = rag if isinstance(rag, dict) else {}
+    config: dict[str, Any] = {}
+    for yaml_key, stamp_key in RAG_RUN_CONFIG_KEYS:
+        node: Any = rag
+        for part in yaml_key.split("."):
+            node = node.get(part) if isinstance(node, dict) else None
+        if node is None or isinstance(node, (dict, list)):
+            continue
+        config[stamp_key] = node
+
+    # 日志口径决定延迟读数是否可比（质量指标与日志无关）。
+    mybatis = document.get("mybatis-plus")
+    if isinstance(mybatis, dict):
+        configuration = mybatis.get("configuration")
+        if isinstance(configuration, dict) and configuration.get("log-impl"):
+            config["sql_log_impl"] = str(configuration["log-impl"])
+
+    config["source"] = str(path)
+    config["captured_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    return config
+
+
+def describe_run_caliber(run_config: dict[str, Any]) -> str:
+    """把口径渲染成一行人类可读文本，附在报告头部。"""
+    if not run_config:
+        return "unknown（未记录配置；该报告无法自证运行口径）"
+    parts = [
+        f"force-retrieval-mode={run_config.get('force_retrieval_mode')}",
+        f"force-retrieval-full-corpus={run_config.get('force_retrieval_full_corpus')}",
+        f"clarification-enabled={run_config.get('clarification_enabled')}",
+        f"keyword-channel-enabled={run_config.get('keyword_channel_enabled')}",
+        f"rerank-enabled={run_config.get('rerank_enabled')}",
+    ]
+    if run_config.get("rrf_k") is not None:
+        parts.append(
+            "rrf(k={}, vector={}, keyword={}, adaptive={})".format(
+                run_config.get("rrf_k"),
+                run_config.get("rrf_vector_weight"),
+                run_config.get("rrf_keyword_weight"),
+                run_config.get("rrf_adaptive_keyword_weight_enabled"),
+            )
+        )
+    if run_config.get("sql_log_impl"):
+        parts.append(f"sql-log={str(run_config['sql_log_impl']).rsplit('.', 1)[-1]}")
+    return " ".join(parts)
+
+
+def write_report(output_dir: Path,
+                 observations_file: str = "observations.jsonl",
+                 report_prefix: str = "report",
+                 run_config: dict[str, Any] | None = None) -> None:
+    observations_path = output_dir / Path(observations_file).name
     observations_by_id: OrderedDict[str, dict[str, Any]] = OrderedDict()
     for line in observations_path.read_text(encoding="utf-8").splitlines():
         if line.strip():
             observation = json.loads(line)
             observations_by_id[str(observation["question_id"])] = observation
     observations = list(observations_by_id.values())
+    # 观测记录里自带的口径优先——它才是这批请求实际按什么配置跑的；参数仅作回退。
+    stamped_config = next(
+        (obs["run_config"] for obs in observations if isinstance(obs.get("run_config"), dict)),
+        None,
+    )
+    effective_config = stamped_config or run_config or {}
     total = len(read_gold(output_dir))
     rows = []
     for obs in observations:
@@ -934,6 +1132,7 @@ def write_report(output_dir: Path) -> None:
             )
             if duration is not None
         ]
+        scope = observation_route_scope(obs)
         rows.append({
             "question_id": obs["question_id"],
             "chat_mode": obs.get("chat_mode") or "AUTO_DOCUMENT",
@@ -955,6 +1154,8 @@ def write_report(output_dir: Path) -> None:
             "unique_document_count": len(unique_retrieved),
             "duplicate_document_ratio": duplicate_ratio(raw_retrieved),
             "route_candidate_count": len(route_docs),
+            "retrieval_scope_document_count": scope.get("retrieval_scope_document_count"),
+            "route_status": scope.get("route_status") or "",
             "channel_count": len(obs.get("channel_executions") or []),
             "channel_duration_sum_ms": channel_duration_sum,
             "vector_duration_avg_ms": mean(vector_durations),
@@ -988,6 +1189,23 @@ def write_report(output_dir: Path) -> None:
         "avg_unique_document_count": mean([row["unique_document_count"] for row in retrieval_rows]),
         "avg_duplicate_document_ratio": mean([row["duplicate_document_ratio"] for row in retrieval_rows]),
         "avg_route_candidate_count": mean([row["route_candidate_count"] for row in retrieval_rows]),
+        "avg_retrieval_scope_document_count": mean([
+            row["retrieval_scope_document_count"]
+            for row in retrieval_rows
+            if row["retrieval_scope_document_count"] is not None
+        ]),
+        "high_confidence_route_cases": sum(1 for row in rows if row["route_status"] == "SUCCESS"),
+        "avg_high_confidence_scope_document_count": mean([
+            row["retrieval_scope_document_count"]
+            for row in rows
+            if row["route_status"] == "SUCCESS" and row["retrieval_scope_document_count"] is not None
+        ]),
+        "low_confidence_route_cases": sum(1 for row in rows if row["route_status"] == "LOW_CONFIDENCE"),
+        "avg_low_confidence_scope_document_count": mean([
+            row["retrieval_scope_document_count"]
+            for row in rows
+            if row["route_status"] == "LOW_CONFIDENCE" and row["retrieval_scope_document_count"] is not None
+        ]),
         "avg_channel_duration_sum_ms": mean([row["channel_duration_sum_ms"] for row in retrieval_rows]),
         "avg_vector_duration_ms": mean([row["vector_duration_avg_ms"] for row in retrieval_rows]),
         "avg_keyword_duration_ms": mean([row["keyword_duration_avg_ms"] for row in retrieval_rows]),
@@ -995,12 +1213,23 @@ def write_report(output_dir: Path) -> None:
         "empty_channels": sum(1 for row in retrieval_rows if row["channel_count"] == 0),
         "suspected_clarification": sum(1 for row in retrieval_rows if row["retrieved_count"] == 0 and row["channel_count"] == 0),
         "stage_benchmarks": stage_benchmarks,
+        "run_config": effective_config,
         "rows": rows,
     }
-    (output_dir / "report.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
+    safe_report_prefix = Path(report_prefix).name
+    (output_dir / f"{safe_report_prefix}.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
     md = [
         "# EnterpriseRAG-Bench KnowHub Report",
         "",
+        f"- Run caliber: {describe_run_caliber(effective_config)}",
+    ]
+    if effective_config.get("force_retrieval_mode") is True:
+        md.append(
+            "- WARNING: force-retrieval-mode=true forces every query into RETRIEVAL and disables"
+            " clarification, so any route-accuracy figure from this run is not comparable to"
+            " production and must not be quoted as a product metric."
+        )
+    md.extend([
         f"- Completed: {metrics['completed']}/{metrics['total']}",
         f"- Failed answers: {metrics['failed_answers']}",
         f"- Retrieval-scored questions: {metrics['retrieval_questions']}",
@@ -1018,6 +1247,11 @@ def write_report(output_dir: Path) -> None:
         f"- Avg unique document count: {metrics['avg_unique_document_count']:.2f}",
         f"- Avg duplicate document ratio: {metrics['avg_duplicate_document_ratio']:.4f}",
         f"- Avg route candidate count: {metrics['avg_route_candidate_count']:.2f}",
+        f"- Avg retrieval scope document count: {metrics['avg_retrieval_scope_document_count']:.2f}",
+        f"- High-confidence routes (SUCCESS): {metrics['high_confidence_route_cases']}"
+        f" (avg scope {metrics['avg_high_confidence_scope_document_count']:.2f})",
+        f"- Low-confidence routes: {metrics['low_confidence_route_cases']}"
+        f" (avg scope {metrics['avg_low_confidence_scope_document_count']:.2f})",
         f"- Avg channel duration sum ms: {metrics['avg_channel_duration_sum_ms']:.2f}",
         f"- Avg vector duration ms: {metrics['avg_vector_duration_ms']:.2f}",
         f"- Avg keyword duration ms: {metrics['avg_keyword_duration_ms']:.2f}",
@@ -1025,7 +1259,7 @@ def write_report(output_dir: Path) -> None:
         f"- Empty channels: {metrics['empty_channels']}",
         f"- Suspected clarification: {metrics['suspected_clarification']}",
         "",
-    ]
+    ])
     if stage_benchmarks:
         md.extend([
             "## Stage Benchmarks",
@@ -1044,8 +1278,9 @@ def write_report(output_dir: Path) -> None:
                 f"| {item.get('sampleCount') or item.get('sample_count') or ''} |"
             )
         md.append("")
-    (output_dir / "report.md").write_text("\n".join(md), encoding="utf-8")
-    log(f"Report written to {output_dir / 'report.md'}")
+    report_path = output_dir / f"{safe_report_prefix}.md"
+    report_path.write_text("\n".join(md), encoding="utf-8")
+    log(f"Report written to {report_path}")
 
 
 def main(argv: list[str]) -> int:
@@ -1054,6 +1289,12 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--username", default=os.getenv("KNOWHUB_ADMIN_USERNAME", "admin"))
     parser.add_argument("--password", default=os.getenv("KNOWHUB_ADMIN_PASSWORD"))
     parser.add_argument("--config-yaml", default="knowhub-app/src/main/resources/application.yaml")
+    parser.add_argument(
+        "--rag-config-yaml",
+        default="",
+        help="Config file to record as this run's RAG caliber; defaults to --config-yaml. "
+             "Point it at evaluation/application-eval.yaml when the backend was launched with it.",
+    )
     parser.add_argument("--output-dir", default="evaluation/reports/enterprise-rag-bench-250-original")
     parser.add_argument("--question-count", type=int, default=50)
     parser.add_argument("--document-count", type=int, default=250)
@@ -1095,6 +1336,9 @@ def main(argv: list[str]) -> int:
     if args.phase in ("prepare", "all"):
         prepare_subset(output_dir, args.question_count, args.document_count)
 
+    # 只记录，不影响评测本身：读不到配置时返回空字典。
+    run_config = load_rag_run_config(Path(args.rag_config_yaml or args.config_yaml))
+
     if args.phase in ("import", "evaluate", "all"):
         if not args.password:
             yaml_username, yaml_password = load_admin_auth_from_yaml(Path(args.config_yaml))
@@ -1117,10 +1361,12 @@ def main(argv: list[str]) -> int:
                 observations_file=args.observations_file,
                 max_cases=args.max_cases or None,
                 rerun_completed=args.rerun_completed,
+                run_config=run_config,
             )
 
     if args.phase == "report":
-        write_report(output_dir)
+        report_prefix = "report" if Path(args.observations_file).name == "observations.jsonl" else f"report-{Path(args.observations_file).stem}"
+        write_report(output_dir, args.observations_file, report_prefix, run_config=run_config)
 
     return 0
 

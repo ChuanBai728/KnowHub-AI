@@ -63,7 +63,10 @@ spring:
 mybatis-plus:
   mapper-locations: classpath:mapper/*.xml
   configuration:
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    # 默认关闭 SQL 明细日志。StdOutImpl 会打印每条语句与结果集，日志量可达数百 MB，
+    # 并显著抬高延迟读数（评测中实测差异约 60%），且对检索结果无影响。
+    # 需要临时排查时用启动参数覆盖：--mybatis-plus.configuration.log-impl=org.apache.ibatis.logging.stdout.StdOutImpl
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
     local-cache-scope: statement
 
 app:

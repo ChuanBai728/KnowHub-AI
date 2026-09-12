@@ -103,6 +103,18 @@ class ChatPreparationOrchestratorTest {
     }
 
     @Test
+    void forcedFullCorpusRetrievalBypassesKnowledgeRoute() {
+        properties.setForceRetrievalMode(true);
+        properties.setForceRetrievalFullCorpus(true);
+
+        assertTrue(orchestrator.shouldBypassKnowledgeRoute(ai.knowhub.enums.ChatQueryMode.AUTO_DOCUMENT));
+        assertFalse(orchestrator.shouldBypassKnowledgeRoute(ai.knowhub.enums.ChatQueryMode.DOCUMENT));
+
+        properties.setForceRetrievalMode(false);
+        assertFalse(orchestrator.shouldBypassKnowledgeRoute(ai.knowhub.enums.ChatQueryMode.AUTO_DOCUMENT));
+    }
+
+    @Test
     void lowConfidenceBroadDiagnosticQuestionStillClarifies() {
         KnowledgeRouteDecision decision = decision(
             new BigDecimal("0.20"),
