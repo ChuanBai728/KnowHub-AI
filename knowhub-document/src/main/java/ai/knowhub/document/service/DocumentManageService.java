@@ -6,6 +6,7 @@ import ai.knowhub.document.dto.DocumentChunkDetailQueryDto;
 import ai.knowhub.document.dto.DocumentDetailQueryDto;
 import ai.knowhub.document.dto.DocumentDeleteDto;
 import ai.knowhub.document.dto.DocumentPageQueryDto;
+import ai.knowhub.document.dto.DocumentReparseDto;
 import ai.knowhub.document.dto.DocumentStrategyConfirmDto;
 import ai.knowhub.document.dto.DocumentStrategyPlanQueryDto;
 import ai.knowhub.document.dto.DocumentTaskLogQueryDto;
@@ -16,6 +17,7 @@ import ai.knowhub.document.vo.DocumentChunkDetailVo;
 import ai.knowhub.document.vo.DocumentDeleteVo;
 import ai.knowhub.document.vo.DocumentListItemVo;
 import ai.knowhub.document.vo.DocumentPageQueryVo;
+import ai.knowhub.document.vo.DocumentReparseVo;
 import ai.knowhub.document.vo.DocumentStrategyConfirmVo;
 import ai.knowhub.document.vo.DocumentStrategyPlanQueryVo;
 import ai.knowhub.document.vo.DocumentTaskLogQueryVo;
@@ -58,6 +60,9 @@ public interface DocumentManageService {
      * @return 上传结果，包含文档ID、文件名、上传状态等信息
      */
     DocumentUploadVo upload(MultipartFile file, DocumentUploadDto dto);
+
+    /** 为已有文档创建新的解析任务，保留文档 ID 和原始对象。 */
+    DocumentReparseVo reparse(DocumentReparseDto dto);
 
     /**
      * 分页查询文档列表

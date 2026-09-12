@@ -41,4 +41,53 @@ class DocumentStructureSignalExtractorTest {
             .filter(signal -> signal.getReasons().contains("fenced-code-boundary")))
             .hasSize(2);
     }
+
+    @Test
+    void htmlCommentsFrontMatterAndHugoShortcodesCannotCreateFakeNodes() {
+        DocumentStructureSignalExtractor extractor = new DocumentStructureSignalExtractor(
+            new DocumentManageProperties(),
+            new DocumentLineClassifier()
+        );
+        String markdown = """
+            # Kubernetes ConfigMap
+
+            > 来源说明
+
+            ---
+            title: ConfigMap
+            api_metadata:
+            - apiVersion: v1
+            ---
+
+            {{< note >}}
+            <!--
+            ## Motivation
+            - English-only commented item
+            -->
+            ## 动机 {#motivation}
+            中文正文。
+            {{< /note >}}
+            ## {{% heading "whatsnext" %}}
+            * {{< glossary_tooltip text="监视" term_id="watch" >}}上线的状态，直到完成。
+            """;
+
+        DocumentStructureSignalBatch batch = extractor.extract("Kubernetes ConfigMap", markdown);
+
+        assertThat(batch.signals().stream()
+            .filter(DocumentStructureSignal::isHeadingLike)
+            .map(DocumentStructureSignal::getTitle))
+            .containsExactly("动机");
+        assertThat(batch.signals().stream()
+            .filter(signal -> signal.getKind() == DocumentStructureSignalKind.LIST_ITEM))
+            .extracting(DocumentStructureSignal::getTitle)
+            .containsExactly("上线的状态，直到完成。");
+        assertThat(batch.signals().stream()
+            .filter(signal -> signal.getKind() != DocumentStructureSignalKind.NOISE)
+            .map(DocumentStructureSignal::getTitle)
+            .noneMatch(title -> title != null && title.contains("{{")))
+            .isTrue();
+        assertThat(batch.signals().stream()
+            .flatMap(signal -> signal.getReasons().stream()))
+            .contains("yaml-front-matter", "html-comment", "hugo-shortcode");
+    }
 }

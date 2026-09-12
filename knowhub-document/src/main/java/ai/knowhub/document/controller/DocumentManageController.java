@@ -8,6 +8,7 @@ import ai.knowhub.document.dto.DocumentChunkDetailQueryDto;
 import ai.knowhub.document.dto.DocumentDetailQueryDto;
 import ai.knowhub.document.dto.DocumentDeleteDto;
 import ai.knowhub.document.dto.DocumentPageQueryDto;
+import ai.knowhub.document.dto.DocumentReparseDto;
 import ai.knowhub.document.dto.DocumentStrategyConfirmDto;
 import ai.knowhub.document.dto.DocumentStrategyPlanQueryDto;
 import ai.knowhub.document.dto.DocumentTaskLogQueryDto;
@@ -19,6 +20,7 @@ import ai.knowhub.document.vo.DocumentChunkDetailVo;
 import ai.knowhub.document.vo.DocumentListItemVo;
 import ai.knowhub.document.vo.DocumentDeleteVo;
 import ai.knowhub.document.vo.DocumentPageQueryVo;
+import ai.knowhub.document.vo.DocumentReparseVo;
 import ai.knowhub.document.vo.DocumentStrategyConfirmVo;
 import ai.knowhub.document.vo.DocumentStrategyPlanQueryVo;
 import ai.knowhub.document.vo.DocumentTaskLogQueryVo;
@@ -104,6 +106,13 @@ public class DocumentManageController {
 
         // 上传接口只做接收和入队，真正的解析、切块、向量化会在 Kafka 异步任务中完成。
         return ApiResponse.ok(documentManageService.upload(file, dto == null ? new DocumentUploadDto() : dto));
+    }
+
+    /** 复用对象存储中的原文件，重新执行解析和策略推荐。 */
+    @Operation(summary = "重新解析已有文档")
+    @PostMapping("/parse/rebuild")
+    public ApiResponse<DocumentReparseVo> reparse(@Valid @RequestBody DocumentReparseDto dto) {
+        return ApiResponse.ok(documentManageService.reparse(dto));
     }
 
     /**

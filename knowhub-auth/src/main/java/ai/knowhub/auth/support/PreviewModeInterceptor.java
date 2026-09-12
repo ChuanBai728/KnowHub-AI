@@ -29,6 +29,7 @@ public class PreviewModeInterceptor implements HandlerInterceptor {
         ApiVersion.V1_CHAT + "/session/reset",
         ApiVersion.V1_CHAT + "/session/summary/rebuild",
         ApiVersion.V1_MANAGE_DOCUMENT + "/upload",
+        ApiVersion.V1_MANAGE_DOCUMENT + "/parse/rebuild",
         ApiVersion.V1_MANAGE_DOCUMENT + "/delete",
         ApiVersion.V1_MANAGE_DOCUMENT + "/strategy/confirm",
         ApiVersion.V1_MANAGE_DOCUMENT + "/index/build",

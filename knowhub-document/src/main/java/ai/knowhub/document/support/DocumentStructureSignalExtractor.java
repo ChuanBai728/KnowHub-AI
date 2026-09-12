@@ -89,6 +89,17 @@ public class DocumentStructureSignalExtractor {
     /** Markdown 围栏代码块边界，例如 ```bash 或 ~~~yaml。 */
     private static final Pattern FENCED_CODE_BOUNDARY_PATTERN = Pattern.compile("^(?:`{3,}|~{3,}).*$");
 
+    /** Hugo 文档短代码；既可能独占一行，也可能嵌在 Markdown 标题或列表项中。 */
+    private static final Pattern INLINE_HUGO_SHORTCODE_PATTERN = Pattern.compile("\\{\\{[<%].*?[>%]\\}\\}");
+
+    /** 去除短代码后只剩下的 Markdown 结构标记，例如 ## 或 *。 */
+    private static final Pattern MARKDOWN_STRUCTURE_ONLY_PATTERN = Pattern.compile(
+        "^(?:#{1,6}|[-*+•>]|\\[(?: |x|X)]|\\d+[.)])\\s*$"
+    );
+
+    /** Markdown 标题尾部的显式锚点，例如 {#using-configmaps}。 */
+    private static final Pattern MARKDOWN_HEADING_ANCHOR_PATTERN = Pattern.compile("\\s*\\{#[^}]+}\\s*$");
+
     // ==================== 依赖注入 ====================
 
     /** 文档管理配置属性 */
@@ -137,11 +148,59 @@ public class DocumentStructureSignalExtractor {
                 .build());
         }
 
-        // 遍历所有逻辑行，逐行分类。代码块中的命令、编号和注释只能作为正文，不能污染章节树。
+        // 遍历所有逻辑行，逐行分类。代码块、HTML 注释、front matter 和 Hugo 短代码
+        // 都不是用户可见的文档结构，不能污染章节树。
         boolean inFencedCodeBlock = false;
+        boolean inHtmlComment = false;
+        boolean inYamlFrontMatter = false;
+        boolean yamlFrontMatterSeen = false;
         for (int index = 0; index < logicalLines.size(); index++) {
             DocumentStructureLogicalLine logicalLine = logicalLines.get(index);
             String normalized = logicalLine.normalizedText();
+            if (inHtmlComment || normalized.startsWith("<!--")) {
+                signals.add(noiseSignal(logicalLine, "html-comment"));
+                if (inHtmlComment && normalized.contains("-->")) {
+                    inHtmlComment = false;
+                }
+                else if (!inHtmlComment && !normalized.contains("-->")) {
+                    inHtmlComment = true;
+                }
+                continue;
+            }
+            if (inYamlFrontMatter) {
+                signals.add(noiseSignal(logicalLine, "yaml-front-matter"));
+                if ("---".equals(normalized)) {
+                    inYamlFrontMatter = false;
+                }
+                continue;
+            }
+            // 部分评测文档在来源说明之后保留上游 YAML front matter，因此允许它在文档前 20 行开始。
+            if (!yamlFrontMatterSeen && index < 20 && "---".equals(normalized)) {
+                yamlFrontMatterSeen = true;
+                inYamlFrontMatter = true;
+                signals.add(noiseSignal(logicalLine, "yaml-front-matter"));
+                continue;
+            }
+
+            // Kubernetes 等 Hugo 源文档会把短代码包在 Markdown 标题或列表标记中。
+            // 先剥离短代码：若只剩结构空壳则整行是噪音；若仍有可见正文，则保留正文继续分类。
+            boolean hugoShortcodeStripped = INLINE_HUGO_SHORTCODE_PATTERN.matcher(normalized).find();
+            if (hugoShortcodeStripped) {
+                String visibleText = INLINE_HUGO_SHORTCODE_PATTERN.matcher(normalized).replaceAll("").trim();
+                if (visibleText.isBlank() || MARKDOWN_STRUCTURE_ONLY_PATTERN.matcher(visibleText).matches()) {
+                    signals.add(noiseSignal(logicalLine, "hugo-shortcode"));
+                    continue;
+                }
+                logicalLine = new DocumentStructureLogicalLine(
+                    logicalLine.lineNo(),
+                    logicalLine.sourceLineNo(),
+                    logicalLine.segmentIndex(),
+                    logicalLine.indentLevel(),
+                    logicalLine.rawText(),
+                    visibleText
+                );
+                normalized = visibleText;
+            }
             if (FENCED_CODE_BOUNDARY_PATTERN.matcher(normalized).matches()) {
                 signals.add(signal(
                     logicalLine.lineNo(),
@@ -176,7 +235,11 @@ public class DocumentStructureSignalExtractor {
                 continue;
             }
             LineContext context = buildContext(logicalLines, index);
-            signals.add(classify(normalizedTitle, logicalLine, context, lineFrequency));
+            DocumentStructureSignal classified = classify(normalizedTitle, logicalLine, context, lineFrequency);
+            if (hugoShortcodeStripped) {
+                classified.getReasons().add("hugo-shortcode-stripped");
+            }
+            signals.add(classified);
         }
 
         // 提取上下文行文本
@@ -184,6 +247,22 @@ public class DocumentStructureSignalExtractor {
             .map(DocumentStructureLogicalLine::normalizedText)
             .toList();
         return new DocumentStructureSignalBatch(contextLines, signals);
+    }
+
+    private DocumentStructureSignal noiseSignal(DocumentStructureLogicalLine logicalLine, String reason) {
+        return signal(
+            logicalLine.lineNo(),
+            logicalLine.rawText(),
+            logicalLine.normalizedText(),
+            logicalLine.indentLevel(),
+            DocumentStructureSignalKind.NOISE,
+            "",
+            "",
+            0,
+            null,
+            List.of(reason),
+            1.0D
+        );
     }
 
     /**
@@ -237,7 +316,7 @@ public class DocumentStructureSignalExtractor {
         // Markdown 标题
         Matcher markdown = MARKDOWN_HEADING_PATTERN.matcher(normalized);
         if (markdown.matches()) {
-            String title = markdown.group(2).trim();
+            String title = cleanMarkdownHeadingTitle(markdown.group(2));
             // 如果标题与文档标题重复，标记为噪音
             if (sameDocumentTitle(documentTitle, title)) {
                 return signal(lineNo, rawText, normalized, logicalLine.indentLevel(), DocumentStructureSignalKind.NOISE, "", title, 0, null,
@@ -746,6 +825,10 @@ public class DocumentStructureSignalExtractor {
             .replaceAll("\\.[A-Za-z0-9]{1,6}$", "")
             .replaceAll("\\s+", "")
             .toLowerCase(Locale.ROOT);
+    }
+
+    private String cleanMarkdownHeadingTitle(String title) {
+        return MARKDOWN_HEADING_ANCHOR_PATTERN.matcher(safeText(title)).replaceFirst("").trim();
     }
 
     /**

@@ -22,6 +22,7 @@ import ai.knowhub.document.dto.DocumentDeleteDto;
 import ai.knowhub.document.dto.DocumentDetailQueryDto;
 import ai.knowhub.document.dto.DocumentIndexBuildDto;
 import ai.knowhub.document.dto.DocumentPageQueryDto;
+import ai.knowhub.document.dto.DocumentReparseDto;
 import ai.knowhub.document.dto.DocumentStrategyConfirmDto;
 import ai.knowhub.document.dto.DocumentStrategyPlanQueryDto;
 import ai.knowhub.document.dto.DocumentStrategyStepItemDto;
@@ -58,6 +59,7 @@ import ai.knowhub.document.vo.DocumentIndexBuildVo;
 import ai.knowhub.document.vo.DocumentListItemVo;
 import ai.knowhub.document.vo.DocumentParentBlockItemVo;
 import ai.knowhub.document.vo.DocumentPageQueryVo;
+import ai.knowhub.document.vo.DocumentReparseVo;
 import ai.knowhub.document.vo.DocumentStrategyConfirmVo;
 import ai.knowhub.document.vo.DocumentStrategyPipelineVo;
 import ai.knowhub.document.vo.DocumentStrategyPlanQueryVo;
@@ -315,6 +317,72 @@ public class DocumentManageServiceImpl implements DocumentManageService {
         kafkaProducer.sendParseRoute(new DocumentParseRouteMessage(documentId, taskId));
 
         return uploadVo;
+    }
+
+    /**
+     * 对已上传文档重新执行解析与策略推荐。
+     *
+     * 原始文件和文档 ID 保持不变；新任务完成后会替换结构节点、导航索引和图投影，
+     * 随后仍需像首次上传一样确认新策略并重建检索索引。
+     */
+    @Override
+    public DocumentReparseVo reparse(DocumentReparseDto dto) {
+        KnowHubDocument document = getDocumentOrThrow(dto.getDocumentId());
+        long runningTaskCount = taskMapper.selectCount(new LambdaQueryWrapper<KnowHubDocumentTask>()
+            .eq(KnowHubDocumentTask::getDocumentId, document.getId())
+            .in(KnowHubDocumentTask::getTaskStatus,
+                DocumentTaskStatusEnum.NEW.getCode(),
+                DocumentTaskStatusEnum.RUNNING.getCode())
+            .eq(KnowHubDocumentTask::getStatus, BusinessStatus.YES.getCode()));
+        if (runningTaskCount > 0) {
+            throw new KnowHubFrameException(
+                DocumentManageCode.DOCUMENT_STATUS_INVALID.getCode(),
+                "当前文档仍有执行中的处理任务，不能重复发起解析。"
+            );
+        }
+
+        Long taskId = uidGenerator.getUid();
+        Long operatorId = dto.getOperatorId();
+        KnowHubDocumentTask task = new KnowHubDocumentTask();
+        task.setId(taskId);
+        task.setDocumentId(document.getId());
+        task.setTaskType(DocumentTaskTypeEnum.PARSE_ROUTE.getCode());
+        task.setTaskStatus(DocumentTaskStatusEnum.NEW.getCode());
+        task.setCurrentStage(DocumentTaskStageEnum.FILE_UPLOAD.getCode());
+        task.setTriggerSource(resolveTriggerSource(operatorId));
+        task.setRetryCount(0);
+        task.setStatus(BusinessStatus.YES.getCode());
+
+        DocumentReparseVo reparseVo = transactionTemplate.execute(status -> {
+            taskMapper.insert(task);
+            document.setParseStatus(DocumentParseStatusEnum.PARSING.getCode());
+            document.setStrategyStatus(DocumentStrategyStatusEnum.WAIT_RECOMMEND.getCode());
+            document.setIndexStatus(DocumentIndexStatusEnum.WAIT_BUILD.getCode());
+            document.setCurrentPlanId(null);
+            document.setParseErrorMsg(null);
+            documentMapper.updateById(document);
+
+            taskLogService.saveLog(taskId, document.getId(),
+                DocumentTaskStageEnum.FILE_UPLOAD.getCode(),
+                DocumentTaskEventTypeEnum.START.getCode(),
+                DocumentLogLevelEnum.INFO.getCode(),
+                resolveOperatorType(operatorId),
+                operatorId,
+                "已创建重新解析任务，等待异步执行。",
+                Map.of("objectName", document.getObjectName()));
+
+            return new DocumentReparseVo(
+                document.getId(),
+                taskId,
+                document.getDocumentName(),
+                document.getParseStatus(),
+                document.getStrategyStatus(),
+                document.getIndexStatus()
+            );
+        });
+
+        kafkaProducer.sendParseRoute(new DocumentParseRouteMessage(document.getId(), taskId));
+        return reparseVo;
     }
 
     /**
