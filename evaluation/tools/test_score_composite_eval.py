@@ -155,6 +155,30 @@ class CompositeScoreTest(unittest.TestCase):
         self.assertEqual(0.0, row["route_recall@20"])
         self.assertEqual(1.0, row["recall@10"])
 
+    def test_reports_hit_at_one_three_and_five(self):
+        gold = {
+            "question_id": "T2-hit-test",
+            "component": "t2retrieval",
+            "question_type": "retrieval",
+            "expected_doc_ids": ["doc-gold"],
+            "allowed_execution_modes": ["RETRIEVAL"],
+            "answer_facts": [],
+        }
+        observation = {
+            "answer": "ok",
+            "answer_status": "COMPLETED",
+            "retrieved_document_ids": ["doc-other-1", "doc-other-2", "doc-gold"],
+        }
+
+        row = score_case(gold, observation, {})
+        self.assertEqual(0.0, row["hit@1"])
+        self.assertEqual(1.0, row["hit@3"])
+        self.assertEqual(1.0, row["hit@5"])
+        metrics = summarize([row])
+        self.assertEqual(0.0, metrics["hit@1"])
+        self.assertEqual(1.0, metrics["hit@3"])
+        self.assertEqual(1.0, metrics["hit@5"])
+
     def test_writes_single_component_subset_report_as_non_official_score(self):
         metrics = summarize([])
         metrics["score"] = 12.5
