@@ -7,7 +7,7 @@ package ai.knowhub.enums;
  *
  * 业务背景：
  *   文档切块完成后，需要使用 Embedding 模型将每个文本块转换为高维向量，
- *   然后存入向量数据库（如 Milvus、PGVector）才能进行语义检索。
+ *   然后存入 PGVector 才能进行语义检索。
  *   向量化过程是计算密集型操作，通常异步执行。
  *
  * 状态流转：

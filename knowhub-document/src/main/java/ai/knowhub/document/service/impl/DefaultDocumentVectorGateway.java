@@ -45,7 +45,7 @@ import java.util.Objects;
  *
  * 为什么用 pgvector：
  *   - pgvector 是 PostgreSQL 的向量扩展，支持向量相似度搜索（余弦距离 <=>）
- *   - 相比独立的向量数据库（如 Milvus），pgvector 可以和业务数据在同一数据库中，减少架构复杂度
+ *   - pgvector 可以和业务数据在同一数据库中，减少架构复杂度
  *   - 本项目使用 1 - (embedding <=> query_vector) 计算余弦相似度
  *
  * 依赖组件：

@@ -14,7 +14,7 @@ cp knowhub-app/src/main/resources/application.yaml.example knowhub-app/src/main/
 docker compose up -d
 ```
 
-compose 服务栈包含 MySQL、Redis、Kafka、PostgreSQL（pgvector）、Elasticsearch、MinIO、Milvus、Attu 和 Neo4j。
+compose 服务栈包含 MySQL、Redis、Kafka、PostgreSQL（pgvector）、Elasticsearch、MinIO 和 Neo4j。
 
 > 注意：MySQL 使用本地 3306 端口，如果本地已安装 MySQL 会端口冲突。可修改 `docker-compose.yml` 中的端口映射。
 
@@ -48,4 +48,4 @@ Vite 将 `/api/v1` 代理到 `http://127.0.0.1:9082`。
 | `NEO4J_PASSWORD` | Neo4j 密码，默认 `12345678` | 可选 |
 
 ## 存储与搜索
-默认的文档索引将向量写入 PostgreSQL/pgvector，关键词写入 Elasticsearch。Milvus 作为可选的向量存储方案保留，在本地 compose 中仍然可用。Neo4j 保留用于文档结构图谱投影。
+默认的文档索引将向量写入 PostgreSQL/pgvector，关键词写入 Elasticsearch。Neo4j 用于文档结构图谱投影。

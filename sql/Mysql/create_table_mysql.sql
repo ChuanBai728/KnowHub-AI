@@ -307,7 +307,7 @@ CREATE TABLE IF NOT EXISTS `knowhub_document_chunk` (
     `char_count` int DEFAULT '0' COMMENT '字符数',
     `token_count` int DEFAULT '0' COMMENT 'token数',
     `vector_status` tinyint NOT NULL DEFAULT '1' COMMENT '向量状态 1:待向量化 2:向量化中 3:向量化成功 4:向量化失败',
-    `vector_store_type` tinyint NOT NULL DEFAULT '2' COMMENT '向量库类型 1:Milvus 2:PGVector 3:Elasticsearch',
+    `vector_store_type` tinyint NOT NULL DEFAULT '2' COMMENT '向量库类型 2:PGVector 3:Elasticsearch',
     `vector_id` varchar(128) DEFAULT NULL COMMENT '向量库主键',
     `create_time` datetime DEFAULT NULL COMMENT '创建时间',
     `edit_time` datetime DEFAULT NULL COMMENT '编辑时间',

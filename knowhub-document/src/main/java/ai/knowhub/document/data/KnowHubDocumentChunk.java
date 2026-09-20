@@ -140,7 +140,7 @@ public class KnowHubDocumentChunk extends BaseTableData {
 
     /**
      * 向量存储类型枚举值。
-     * 标识向量存储在哪里，如 pgvector、Milvus 等。
+     * 标识向量存储类型，如 pgvector。
      */
     private Integer vectorStoreType;
 

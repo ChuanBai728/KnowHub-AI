@@ -7,18 +7,14 @@ package ai.knowhub.enums;
  *
  * 业务背景：
  *   RAG 系统需要将文本块的向量存储到专用的向量数据库中，以便进行语义相似度检索。
- *   系统支持三种主流的向量存储方案：
- *   - Milvus：专为向量检索设计的开源数据库，性能最优，适合大规模数据。
+ *   系统支持两种向量存储方案：
  *   - PGVector：PostgreSQL 的向量扩展，适合已有 PostgreSQL 基础设施的场景。
  *   - Elasticsearch：通过 dense_vector 字段支持向量检索，适合混合检索（关键词+向量）。
  *
  * 使用示例：
- *   DocumentVectorStoreTypeEnum type = DocumentVectorStoreTypeEnum.getRc(1);  // 返回 MILVUS
+ *   DocumentVectorStoreTypeEnum type = DocumentVectorStoreTypeEnum.getRc(2);  // 返回 PG_VECTOR
  */
 public enum DocumentVectorStoreTypeEnum {
-
-    /** Milvus 向量数据库（专为向量检索设计，性能最优） */
-    MILVUS(1, "Milvus"),
 
     /** PGVector（PostgreSQL 向量扩展，兼容 SQL 生态） */
     PG_VECTOR(2, "PGVector"),

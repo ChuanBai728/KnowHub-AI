@@ -17,7 +17,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * 在本系统中，pgvector 用于存储文档切块的语义向量（Embedding），
  * 配合 Elasticsearch 的关键词检索，实现「向量 + 关键词」的混合检索模式。
  *
- * 为什么用 pgvector 而不是专用向量数据库（如 Milvus）？
+ * 为什么使用 pgvector？
  * 
  *   减少运维成本：不需要额外部署向量数据库，复用已有的 PostgreSQL。
  *   事务一致性：可以与业务数据在同一个数据库中，利用 PostgreSQL 的事务机制。

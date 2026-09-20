@@ -43,7 +43,7 @@ public enum DocumentTaskStageEnum {
     /** 向量化：使用 Embedding 模型将文本块转换为向量 */
     VECTORIZE(7, "向量化"),
 
-    /** 入库完成：向量存入数据库（如 Milvus/PGVector），索引就绪可检索 */
+    /** 入库完成：向量存入 PGVector，索引就绪可检索 */
     STORE_COMPLETE(8, "入库完成");
 
     /**

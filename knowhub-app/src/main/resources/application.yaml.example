@@ -200,15 +200,6 @@ app:
       llm-enabled: false
       llm-max-chars: 3500
       recommend-llm-when-low-quality: true
-    milvus:
-      enabled: false
-      host: 127.0.0.1
-      port: 19530
-      database: default
-      collection-name: knowhub_document_embedding
-      dimension: 1024
-      index-type: HNSW
-      metric-type: COSINE
     pgvector:
       enabled: true
       host: 127.0.0.1

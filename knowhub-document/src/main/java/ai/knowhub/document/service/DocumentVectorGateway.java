@@ -14,7 +14,7 @@ import java.util.List;
  *   - 属于文档处理流水线的"向量存储"层
  *   - 采用 Gateway 设计模式，隔离向量数据库的具体实现
  *   - 上层服务通过此接口与向量数据库交互，无需关心底层实现细节
- *   - 底层通常使用 PostgreSQL + pgvector 或 Milvus 等向量数据库
+ *   - 底层使用 PostgreSQL + pgvector 向量数据库
  *
  * 核心概念：
  *   - 向量化（Vectorize）：将文本转换为高维向量表示的过程
@@ -23,7 +23,7 @@ import java.util.List;
  *
  * 设计模式：Gateway 模式
  *   - 此接口是访问向量存储的唯一入口
- *   - 具体实现可以是 pgvector、Milvus、Pinecone 等不同向量数据库
+ *   - 当前实现使用 pgvector 向量数据库
  *   - 切换向量数据库只需更换实现类，无需修改上层代码
  */
 public interface DocumentVectorGateway {

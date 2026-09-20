@@ -36,7 +36,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -1095,23 +1094,6 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
             return 0D;
         }
         return dot / (Math.sqrt(leftNorm) * Math.sqrt(rightNorm));
-    }
-
-    /**
-     * 词法匹配权重（按关键词长度）。
-     * 长关键词匹配权重更高：>= 8 字符 -> 12 分，>= 5 -> 8 分，>= 3 -> 4 分，其他 -> 2 分。
-     */
-    private double lexicalWeight(int termLength) {
-        if (termLength >= 8) {
-            return 12D;
-        }
-        if (termLength >= 5) {
-            return 8D;
-        }
-        if (termLength >= 3) {
-            return 4D;
-        }
-        return 2D;
     }
 
     /**

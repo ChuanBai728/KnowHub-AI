@@ -13,7 +13,7 @@ KnowHub AI 是一个面向企业知识库问答与 Agent 编排的 Java 17 / Spr
 | `knowhub-common` | 统一响应、异常、枚举、Web 工具、MyBatis 辅助、API 版本常量 |
 | `knowhub-infra` | Redis、Redisson、分布式锁、租约、百度 UID 集成 |
 | `knowhub-auth` | 管理端认证、JWT、预览模式写保护 |
-| `knowhub-document` | 文档上传、解析、分块、异步处理、检索索引、知识库管理、MinIO、Kafka、PGVector、Elasticsearch、Neo4j、Milvus 配置 |
+| `knowhub-document` | 文档上传、解析、分块、异步处理、检索索引、知识库管理、MinIO、Kafka、PGVector、Elasticsearch、Neo4j 配置 |
 | `knowhub-chat` | 对话接口、RAG 编排、Agent 执行、工具调用、检索观察、SSE 流式响应 |
 | `knowhub-app` | Spring Boot 启动应用、运行时配置、模块装配 |
 
@@ -85,7 +85,7 @@ flowchart LR
 - 来源输出：回答中保留可追踪的证据引用。
 - 图谱增强：通过 Neo4j 或 MySQL 结构图谱辅助文档导航。
 
-检索与存储技术方案包括 MySQL、PostgreSQL pgvector、Elasticsearch、Redis、Kafka、MinIO、Milvus 和 Neo4j。
+检索与存储技术方案包括 MySQL、PostgreSQL pgvector、Elasticsearch、Redis、Kafka、MinIO 和 Neo4j。
 
 ## 文档处理能力
 
@@ -113,7 +113,7 @@ flowchart LR
 - 分块策略：支持递归分块、语义分块和模型推荐分块。
 - 结构节点：抽取文档标题、章节、段落和层级关系。
 - 关键词索引：使用 Elasticsearch 支持文档导航与关键词召回。
-- 向量索引：支持 PostgreSQL pgvector，并保留 Milvus 配置。
+- 向量索引：使用 PostgreSQL pgvector。
 - 图谱投影：支持 Neo4j 结构图谱投影和查询。
 - 知识库路由：维护文档、知识库、检索策略和对话入口之间的关系。
 
@@ -137,7 +137,7 @@ flowchart LR
 | 认证 | JWT、预览模式写保护 |
 | 消息与缓存 | Kafka、Redis、Redisson |
 | 文档与对象存储 | Tika、MinIO |
-| 检索与索引 | PostgreSQL pgvector、Elasticsearch、Milvus、Neo4j |
+| 检索与索引 | PostgreSQL pgvector、Elasticsearch、Neo4j |
 | 数据库 | MySQL、PostgreSQL |
 | ID 生成 | 百度 UID |
 | 前端 | Vue 3、Vite、Element Plus、Pinia |
@@ -180,7 +180,7 @@ npm run dev
 | `ALI_BAI_LIAN_API_KEY` | 百炼对话、Embedding 与 Rerank API Key |
 | `TAVILY_API_KEY` | Tavily 搜索工具 API Key，可选 |
 
-本地首次启动时，请根据实际依赖地址配置 MySQL、Redis、Kafka、PostgreSQL、Elasticsearch、MinIO、Milvus 和 Neo4j。
+本地首次启动时，请根据实际依赖地址配置 MySQL、Redis、Kafka、PostgreSQL、Elasticsearch、MinIO 和 Neo4j。
 
 ## 数据库脚本
 
@@ -222,5 +222,5 @@ npm run build
 - 单一命名体系：统一 `KnowHub AI`、`knowhub`、`ai.knowhub`。
 - 单一 API 入口：统一 `/api/v1`，避免散落版本路径。
 - 单一 ID 方案：使用百度 UID。
-- 多检索方案：MySQL、pgvector、Elasticsearch、Milvus、Neo4j 各自承担不同检索与知识组织职责。
+- 多检索方案：MySQL、pgvector、Elasticsearch、Neo4j 各自承担不同检索与知识组织职责。
 - Agent 可观测：流式响应中保留检索、工具、证据和调试信息，便于定位回答质量问题。

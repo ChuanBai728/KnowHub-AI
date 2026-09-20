@@ -58,11 +58,6 @@ public class DocumentManageProperties {
     private StructureParsing structureParsing = new StructureParsing();
 
     /**
-     * Milvus 向量数据库配置，保留为可选向量存储方案。
-     */
-    private Milvus milvus = new Milvus();
-
-    /**
      * PostgreSQL + pgvector 向量数据库配置，用于存储文档切块的语义向量。
      */
     private PgVector pgVector = new PgVector();
@@ -221,18 +216,6 @@ public class DocumentManageProperties {
 
         /** 连接池最小空闲连接数 */
         private Integer minimumIdle = 1;
-    }
-
-    @Data
-    public static class Milvus {
-        private Boolean enabled = Boolean.FALSE;
-        private String host = "127.0.0.1";
-        private Integer port = 19530;
-        private String database = "default";
-        private String collectionName = "knowhub_document_embedding";
-        private Integer dimension = 1024;
-        private String indexType = "HNSW";
-        private String metricType = "COSINE";
     }
 
     /**
