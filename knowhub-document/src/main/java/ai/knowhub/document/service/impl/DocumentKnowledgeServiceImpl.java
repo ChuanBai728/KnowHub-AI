@@ -215,7 +215,6 @@ public class DocumentKnowledgeServiceImpl implements DocumentKnowledgeService {
         // 将查询文本转为向量字面量格式 "[0.1, 0.2, ...]"
         String questionVector = toVectorLiteral(embeddingModel.embed(request.getRetrievalQuery().trim()));
         List<Long> documentIds = request.resolvedDocumentIds();
-        List<Long> taskIds = request.resolvedTaskIds();
 
         // 获取文档描述信息，用于在结果中附带文档名称、知识范围等元数据
         Map<Long, KnowledgeDocumentDescriptor> descriptorMap = listDescriptorMap(documentIds);
@@ -253,7 +252,7 @@ public class DocumentKnowledgeServiceImpl implements DocumentKnowledgeService {
         params.add(resolveTopK(request.getTopK()));              // LIMIT 数量
 
         // 执行查询并映射结果
-        return pgVectorJdbcTemplate.query(sqlBuilder.toString(), params.toArray(), (resultSet, rowNum) -> {
+        return pgVectorJdbcTemplate.query(sqlBuilder.toString(), (resultSet, rowNum) -> {
             long chunkId = resultSet.getLong("id");
             long documentId = resultSet.getLong("document_id");
             double score = resultSet.getDouble("similarity_score");
@@ -273,7 +272,7 @@ public class DocumentKnowledgeServiceImpl implements DocumentKnowledgeService {
                 "vector",
                 score
             );
-        });
+        }, params.toArray());
     }
 
     /**
@@ -290,7 +289,6 @@ public class DocumentKnowledgeServiceImpl implements DocumentKnowledgeService {
 
         // 关键词检索优先走 Elasticsearch；没有启用时，用数据库 LIKE 和加权表达式兜底。
         List<Long> documentIds = request.resolvedDocumentIds();
-        List<Long> taskIds = request.resolvedTaskIds();
         Map<Long, KnowledgeDocumentDescriptor> descriptorMap = listDescriptorMap(documentIds);
         ResolvedMetadataScope resolvedScope = resolveMetadataScope(request);
         if (resolvedScope.documentIds().isEmpty() || resolvedScope.taskIds().isEmpty()) {
@@ -366,7 +364,7 @@ public class DocumentKnowledgeServiceImpl implements DocumentKnowledgeService {
         params.add(resolveTopK(request.getTopK()));
 
         // 执行查询并映射结果
-        return pgVectorJdbcTemplate.query(sqlBuilder.toString(), params.toArray(), (resultSet, rowNum) -> {
+        return pgVectorJdbcTemplate.query(sqlBuilder.toString(), (resultSet, rowNum) -> {
             long chunkId = resultSet.getLong("id");
             long documentId = resultSet.getLong("document_id");
             double score = resultSet.getDouble("keyword_score");
@@ -386,7 +384,7 @@ public class DocumentKnowledgeServiceImpl implements DocumentKnowledgeService {
                 "keyword",
                 score
             );
-        });
+        }, params.toArray());
     }
 
     /**
@@ -1175,11 +1173,6 @@ public class DocumentKnowledgeServiceImpl implements DocumentKnowledgeService {
         return IntStream.range(0, size)
             .mapToObj(index -> "?")
             .collect(Collectors.joining(","));
-    }
-
-    /** Integer 安全转 int，null 时返回 0 */
-    private int defaultInteger(Integer value) {
-        return Objects.requireNonNullElse(value, 0);
     }
 
     /**

@@ -1,7 +1,6 @@
 package ai.knowhub.document.support;
 
 import cn.hutool.core.util.StrUtil;
-import ai.knowhub.enums.DocumentStructureNodeTypeEnum;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;

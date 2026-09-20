@@ -10,7 +10,7 @@ package ai.knowhub.prompt;
  * 在架构中的角色
  * 属于"Prompt 管理层"，与 PromptTemplateService 配合使用。
  * Service 负责加载和渲染模板，该类负责定义模板的标识名称。
- * 在业务代码中通过 PromptTemplateNames.XXX 引用模板名称，
+ * 在业务代码中通过 PromptTemplateNames.RAG_ANSWER_SYSTEM 等常量引用模板名称，
  * 再由 PromptTemplateService#render() 方法加载对应模板并填充变量。
  *
  * 设计模式

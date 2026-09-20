@@ -1,6 +1,5 @@
 package ai.knowhub.chat.rag.retrieve.channel;
 
-import cn.hutool.core.collection.CollectionUtil;
 import ai.knowhub.chat.rag.config.ChatRagProperties;
 import ai.knowhub.chat.rag.model.ConversationExecutionPlan;
 import ai.knowhub.chat.rag.service.DocumentRetrieveDtoFactory;

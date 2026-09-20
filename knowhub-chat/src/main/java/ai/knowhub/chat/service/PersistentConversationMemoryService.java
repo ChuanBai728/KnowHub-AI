@@ -101,9 +101,6 @@ public class PersistentConversationMemoryService implements ConversationMemorySe
     /** 回答的最大长度（用于压缩转录） */
     private static final int MAX_ANSWER_LENGTH = 320;
 
-    /** 回答上下文中回答的最大长度 */
-    private static final int MAX_ANSWER_CONTEXT_ANSWER_LENGTH = 220;
-
     // ==================== 依赖注入 ====================
 
     /** 会话归档存储，用于查询历史回合数据 */

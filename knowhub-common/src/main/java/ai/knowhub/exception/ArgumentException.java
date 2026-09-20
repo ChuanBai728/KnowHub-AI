@@ -1,6 +1,7 @@
 package ai.knowhub.exception;
 
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 
 import java.util.List;
 
@@ -20,6 +21,7 @@ import java.util.List;
  * 设计模式：使用 Lombok @Data 自动生成 getter/setter 方法。
  */
 @Data
+@EqualsAndHashCode(callSuper = false)
 public class ArgumentException extends BaseException {
 
     /**

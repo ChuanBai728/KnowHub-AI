@@ -122,7 +122,7 @@ public class GraphAnswerRenderer {
     /**
      * 渲染相邻章节信息。
      * 输出格式：
-     * 目标章节是："XXX"。
+     * 目标章节是："<章节标题>"。
      * 它属于："YYY"。
      * 上一节："ZZZ"
      * 下一节："WWW"
@@ -143,7 +143,7 @@ public class GraphAnswerRenderer {
     /**
      * 渲染子章节列表。
      * 输出格式：
-     * "XXX"包含以下章节：
+     * "<章节标题>"包含以下章节：
      * - 子章节1
      * - 子章节2
      */

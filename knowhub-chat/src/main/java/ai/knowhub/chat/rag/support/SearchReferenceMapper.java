@@ -1,6 +1,5 @@
 package ai.knowhub.chat.rag.support;
 
-import cn.hutool.core.util.StrUtil;
 import ai.knowhub.chat.model.SearchReference;
 import ai.knowhub.document.support.DocumentKnowledgeMetadataKeys;
 import org.springframework.ai.document.Document;

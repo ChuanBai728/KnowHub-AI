@@ -3,6 +3,7 @@ package ai.knowhub.exception;
 import ai.knowhub.common.ApiResponse;
 import ai.knowhub.enums.BaseCode;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 
 /**
  * 【业务框架异常类】
@@ -25,6 +26,7 @@ import lombok.Data;
  * 使用 Lombok @Data 自动生成 getter/setter 方法。
  */
 @Data
+@EqualsAndHashCode(callSuper = false)
 public class KnowHubFrameException extends BaseException {
 
     /**
@@ -98,7 +100,7 @@ public class KnowHubFrameException extends BaseException {
      *
      * @param apiResponse API 响应对象
      */
-	public KnowHubFrameException(ApiResponse apiResponse) {
+	public KnowHubFrameException(ApiResponse<?> apiResponse) {
 		super(apiResponse.getMessage());
 		this.code = apiResponse.getCode();
 		this.message = apiResponse.getMessage();

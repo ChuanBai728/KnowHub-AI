@@ -649,16 +649,6 @@ public class DocumentStrategyServiceImpl implements DocumentStrategyService {
             && analysisResult.getCharCount() >= properties.getChunk().getSemanticMinChars();
     }
 
-    /** 对单个文本应用结构切块（简化入口） */
-    private List<ChunkCandidate> applyStructureChunking(String parsedText) {
-        return applyStructureChunking(
-            parsedText,
-            DocumentStrategyPipelineTypeEnum.PARENT,
-            "",
-            DocumentChunkSourceTypeEnum.ORIGINAL.getCode()
-        );
-    }
-
     /**
      * 对 ChunkCandidate 列表应用结构切块。
      * 将每个候选块的文本按标题行切分。
@@ -726,11 +716,6 @@ public class DocumentStrategyServiceImpl implements DocumentStrategyService {
         return candidateList;
     }
 
-    /** 对 ChunkCandidate 列表应用递归切块（使用默认 CHILD 流水线） */
-    private List<ChunkCandidate> applyRecursiveChunking(List<ChunkCandidate> sourceList) {
-        return applyRecursiveChunking(sourceList, DocumentStrategyPipelineTypeEnum.CHILD);
-    }
-
     /**
      * 递归切块。
      * 将每个候选块的文本按最大字符数递归切分。
@@ -749,11 +734,6 @@ public class DocumentStrategyServiceImpl implements DocumentStrategyService {
             }
         }
         return resultList;
-    }
-
-    /** 对 ChunkCandidate 列表应用语义切块（使用默认 CHILD 流水线） */
-    private List<ChunkCandidate> applySemanticChunking(List<ChunkCandidate> sourceList) {
-        return applySemanticChunking(sourceList, DocumentStrategyPipelineTypeEnum.CHILD);
     }
 
     /**
@@ -776,11 +756,6 @@ public class DocumentStrategyServiceImpl implements DocumentStrategyService {
             resultList.addAll(semanticSplit(candidate, pipelineType));
         }
         return resultList;
-    }
-
-    /** 对 ChunkCandidate 列表应用大模型切块（使用默认 CHILD 流水线） */
-    private List<ChunkCandidate> applyLlmChunking(List<ChunkCandidate> sourceList) {
-        return applyLlmChunking(sourceList, DocumentStrategyPipelineTypeEnum.CHILD);
     }
 
     /**
@@ -1013,11 +988,6 @@ public class DocumentStrategyServiceImpl implements DocumentStrategyService {
             ? previous
             : previous.substring(previous.length() - allowedChars);
         return suffix.trim();
-    }
-
-    /** 计算递归切块的重叠字符数（使用默认 CHILD 流水线） */
-    private int resolveRecursiveOverlap(int maxChars) {
-        return resolveRecursiveOverlap(maxChars, DocumentStrategyPipelineTypeEnum.CHILD);
     }
 
     /**

@@ -521,10 +521,6 @@ public class BusinessChatService {
     /**
      * 创建一个包含错误信息的 SSE 流（简化版本）。
      */
-    private Flux<String> rejectionFlux(String message) {
-        return rejectionFlux(message, null, null);
-    }
-
     /**
      * 创建一个包含错误信息的 SSE 流。
      */

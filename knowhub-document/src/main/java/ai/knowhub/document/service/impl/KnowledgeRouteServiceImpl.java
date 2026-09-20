@@ -764,42 +764,6 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
     }
 
     /**
-     * 计算词法得分（本地实现，用于无 ES 时的降级方案）。
-     * 按关键词长度加权：长关键词匹配权重更高。
-     * 避免短关键词被长关键词覆盖（如"管理"被"用户管理"覆盖）。
-     */
-    private double lexicalScore(List<String> queryTerms, String content) {
-        String normalizedContent = normalize(content);
-        if (queryTerms.isEmpty() || normalizedContent.isBlank()) {
-            return 0D;
-        }
-        double score = 0D;
-        List<String> sortedTerms = queryTerms.stream()
-            .map(this::normalize)
-            .filter(StrUtil::isNotBlank)
-            .distinct()
-            .sorted(Comparator.comparingInt(String::length).reversed())
-            .toList();
-        List<String> matchedTerms = new ArrayList<>();
-        for (String term : sortedTerms) {
-            String normalizedTerm = normalize(term);
-            if (normalizedTerm.length() < 2) {
-                continue;
-            }
-            // 跳过已被更长关键词覆盖的短关键词
-            boolean coveredByLongerTerm = matchedTerms.stream().anyMatch(existing -> existing.contains(normalizedTerm));
-            if (coveredByLongerTerm) {
-                continue;
-            }
-            if (normalizedContent.contains(normalizedTerm)) {
-                matchedTerms.add(normalizedTerm);
-                score += lexicalWeight(normalizedTerm.length());
-            }
-        }
-        return score;
-    }
-
-    /**
      * 通过 ES 索引搜索词法得分。
      * 委托给 KnowledgeRouteIndexService 的 search 方法。
      */

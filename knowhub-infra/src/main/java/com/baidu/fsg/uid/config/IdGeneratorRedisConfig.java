@@ -46,8 +46,8 @@ public class IdGeneratorRedisConfig {
      * - 与Redis命令行工具查看的数据格式一致
      */
     @Bean("idGeneratorRedisTemplate")
-    public RedisTemplate redisTemplate(RedisConnectionFactory redisConnectionFactory) {
-        RedisTemplate redisTemplate = new RedisTemplate();
+    public RedisTemplate<String, Object> redisTemplate(RedisConnectionFactory redisConnectionFactory) {
+        RedisTemplate<String, Object> redisTemplate = new RedisTemplate<>();
         redisTemplate.setDefaultSerializer(new StringRedisSerializer());
         redisTemplate.setConnectionFactory(redisConnectionFactory);
         return redisTemplate;
@@ -65,7 +65,7 @@ public class IdGeneratorRedisConfig {
      * 这里使用Redis的原子自增操作来分配Worker ID。
      */
     @Bean("disposableWorkerIdAssigner")
-    public WorkerIdAssigner redisDisposableWorkerIdAssigner(@Qualifier("idGeneratorRedisTemplate") RedisTemplate redisTemplate){
+    public WorkerIdAssigner redisDisposableWorkerIdAssigner(@Qualifier("idGeneratorRedisTemplate") RedisTemplate<String, Object> redisTemplate){
         RedisDisposableWorkerIdAssigner redisDisposableWorkerIdAssigner = new RedisDisposableWorkerIdAssigner(redisTemplate);
         return redisDisposableWorkerIdAssigner;
     }

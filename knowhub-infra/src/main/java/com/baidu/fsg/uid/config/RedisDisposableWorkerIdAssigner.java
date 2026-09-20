@@ -36,14 +36,14 @@ import java.util.Optional;
 public class RedisDisposableWorkerIdAssigner implements WorkerIdAssigner {
 
     /** Redis操作模板 */
-    private RedisTemplate redisTemplate;
+    private RedisTemplate<String, Object> redisTemplate;
 
     /**
      * 构造函数
      *
      * @param redisTemplate Redis操作模板
      */
-    public RedisDisposableWorkerIdAssigner (RedisTemplate redisTemplate){
+    public RedisDisposableWorkerIdAssigner(RedisTemplate<String, Object> redisTemplate){
         this.redisTemplate = redisTemplate;
     }
 

@@ -293,8 +293,6 @@ public class DocumentStructureSignalExtractor {
         int lineNo = logicalLine.lineNo();
         String rawText = logicalLine.rawText();
         String normalized = logicalLine.normalizedText();
-        String previousNonBlank = context.previousNonBlank() == null ? "" : context.previousNonBlank().normalizedText();
-        String nextNonBlank = context.nextNonBlank() == null ? "" : context.nextNonBlank().normalizedText();
 
         // 空行
         if (normalized.isBlank()) {

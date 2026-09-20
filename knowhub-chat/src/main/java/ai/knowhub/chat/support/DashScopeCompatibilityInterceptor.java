@@ -273,7 +273,7 @@ public class DashScopeCompatibilityInterceptor extends ModelInterceptor {
 
         // 非流式响应：直接归一化
         Object normalizedMessage = normalizeDirectMessageForProvider(provider, message);
-        if (message instanceof AssistantMessage assistantMessage) {
+        if (message instanceof AssistantMessage) {
             log.info(
                 "模型消息响应[{}]: provider={}, model={}, summary={}",
                 callId,
