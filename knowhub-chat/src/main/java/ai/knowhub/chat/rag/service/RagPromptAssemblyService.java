@@ -6,11 +6,13 @@ import ai.knowhub.chat.rag.config.ChatRagProperties;
 import ai.knowhub.chat.rag.model.AnswerHistoryContext;
 import ai.knowhub.chat.rag.model.ConversationExecutionPlan;
 import ai.knowhub.chat.rag.model.RagPromptAssemblyResult;
+import ai.knowhub.chat.rag.model.PromptEvidenceManifest;
 import ai.knowhub.chat.rag.model.RagRetrievalContext;
 import ai.knowhub.chat.rag.model.SubQuestionEvidence;
 import ai.knowhub.prompt.PromptTemplateNames;
 import ai.knowhub.prompt.PromptTemplateService;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.BeanUtils;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -126,7 +128,8 @@ public class RagPromptAssemblyService {
             promptBudget.renderedReferenceCount,
             promptBudget.omittedReferenceCount,
             promptBudget.renderedReferenceDetails,
-            promptBudget.omittedReferenceDetails
+            promptBudget.omittedReferenceDetails,
+            new PromptEvidenceManifest(promptBudget.renderedReferences)
         );
     }
 
@@ -223,7 +226,7 @@ public class RagPromptAssemblyService {
                 if (promptBudget.tryConsume(block.length())) {
                     builder.append(block);
                     renderedReferenceKeys.add(uniqueKey);
-                    promptBudget.markRendered(referenceSummary(reference, "已纳入 Prompt"));
+                    promptBudget.markRendered(snapshotReference(reference), referenceSummary(reference, "已纳入 Prompt"));
                 } else {
                     omitted = true;
                     promptBudget.markOmitted(referenceSummary(reference, "超出上下文预算，已省略"));
@@ -236,7 +239,7 @@ public class RagPromptAssemblyService {
             if (promptBudget.tryConsume(block.length())) {
                 builder.append(block);
                 renderedReferenceKeys.add(uniqueKey);
-                promptBudget.markRendered(referenceSummary(reference, "已纳入 Prompt"));
+                promptBudget.markRendered(snapshotReference(reference), referenceSummary(reference, "已纳入 Prompt"));
             } else {
                 omitted = true;
                 promptBudget.markOmitted(referenceSummary(reference, "超出上下文预算，已省略"));
@@ -281,6 +284,15 @@ public class RagPromptAssemblyService {
         return snippet.length() <= maxChars ? snippet : snippet.substring(0, maxChars) + "...";
     }
 
+    /** 保存模型实际可见的片段，避免引用详情展示未进入 Prompt 的截断尾部。 */
+    private SearchReference snapshotReference(SearchReference reference) {
+        SearchReference snapshot = new SearchReference();
+        BeanUtils.copyProperties(reference, snapshot);
+        snapshot.setSnippet(trimSnippet(reference.getSnippet(),
+            "WEB".equalsIgnoreCase(reference.getSourceType()) ? 900 : 1100));
+        return snapshot;
+    }
+
     /** 构建引用摘要（用于日志和调试） */
     private String referenceSummary(SearchReference reference, String suffix) {
         if (reference == null) {
@@ -320,6 +332,8 @@ public class RagPromptAssemblyService {
         private final List<String> renderedReferenceDetails = new ArrayList<>();
         /** 被省略引用的详情列表 */
         private final List<String> omittedReferenceDetails = new ArrayList<>();
+        /** 只登记成功消耗预算并写入 Prompt 的证据；复用编号沿用首次展示的快照。 */
+        private final List<SearchReference> renderedReferences = new ArrayList<>();
 
         private PromptBudget(int totalBudget, int perSubQuestionBudget) {
             this.totalBudget = totalBudget;
@@ -352,8 +366,9 @@ public class RagPromptAssemblyService {
         }
 
         /** 标记一个引用已渲染 */
-        private void markRendered(String detail) {
+        private void markRendered(SearchReference reference, String detail) {
             renderedReferenceCount++;
+            renderedReferences.add(reference);
             if (StrUtil.isNotBlank(detail)) {
                 renderedReferenceDetails.add(detail);
             }

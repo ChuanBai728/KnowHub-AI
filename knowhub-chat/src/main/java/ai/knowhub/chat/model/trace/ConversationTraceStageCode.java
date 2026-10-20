@@ -93,6 +93,9 @@ public enum ConversationTraceStageCode {
      */
     RECOMMENDATION("RECOMMENDATION", "推荐问题", 80),
 
+    /** 显式引用绑定阶段：只接受本轮 Prompt 展示证据的合法编号。 */
+    CITATION_BINDING("CITATION_BINDING", "显式引用绑定", 85),
+
     /**
      * 收尾归档阶段（order=90）
      * 保存对话记录、更新会话状态、清理临时数据等收尾工作。

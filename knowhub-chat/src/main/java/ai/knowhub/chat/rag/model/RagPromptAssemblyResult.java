@@ -86,4 +86,7 @@ public class RagPromptAssemblyResult {
      * 用于调试和追踪，帮助调整预算参数。
      */
     private List<String> omittedReferenceDetails;
+
+    /** 实际进入本轮 Prompt 的证据清单，是显式引用绑定的唯一候选来源。 */
+    private PromptEvidenceManifest evidenceManifest;
 }

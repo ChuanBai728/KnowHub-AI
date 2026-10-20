@@ -215,8 +215,7 @@ public class RagChatExecutor implements ConversationExecutor {
             return Flux.just(StrUtil.blankToDefault(plan.getNoEvidenceReply(), "当前没有足够证据支持明确回答。"));
         }
 
-        // 将所有子问题的引用合并到任务上下文中，供前端展示引用来源
-        taskInfo.references().addAll(context.flattenReferences());
+        // 检索候选只用于检索观测，不能直接进入最终引用和归档。
         ExecutorEventSupport.publishThinking(taskInfo, streamEventWriter, "证据整理完成，正在基于证据生成回答。");
 
         // --- 阶段：Prompt 预算组装 ---
@@ -227,6 +226,7 @@ public class RagChatExecutor implements ConversationExecutor {
 
         // 调用 Prompt 组装服务，把证据、历史上下文、系统提示词等组装成最终的 system prompt 和 user prompt
         RagPromptAssemblyResult promptAssemblyResult = ragPromptAssemblyService.assemble(plan, context);
+        taskInfo.promptEvidenceManifest(promptAssemblyResult.getEvidenceManifest());
         String systemPrompt = promptAssemblyResult.getSystemPrompt();
         String userPrompt = promptAssemblyResult.getUserPrompt();
 

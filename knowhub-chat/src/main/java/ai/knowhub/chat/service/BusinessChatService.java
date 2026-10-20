@@ -27,6 +27,8 @@ import ai.knowhub.chat.rag.model.ConversationExecutionPlan;
 import ai.knowhub.document.model.KnowledgeDocumentDescriptor;
 import ai.knowhub.document.service.DocumentKnowledgeService;
 import ai.knowhub.chat.rag.service.ChatPreparationOrchestrator;
+import ai.knowhub.chat.rag.service.ExplicitCitationBindingService;
+import ai.knowhub.chat.rag.model.ExecutionMode;
 import ai.knowhub.chat.support.ChatContextKeys;
 import ai.knowhub.chat.support.SinkEmitHelper;
 import ai.knowhub.chat.support.StreamEventMetadata;
@@ -179,6 +181,9 @@ public class BusinessChatService {
 
     /** 提示词模板服务，渲染模板化的提示词 */
     private final PromptTemplateService promptTemplateService;
+
+    /** 将 RAG 答案中的编号绑定到本轮实际展示的证据。 */
+    private final ExplicitCitationBindingService explicitCitationBindingService;
 
     // ==================== 公开 API 方法 ====================
 
@@ -590,6 +595,7 @@ public class BusinessChatService {
         }
 
         String responseMessage = "已停止会话生成";
+        String answer = taskInfo.answerBuffer().toString();
         ConversationTraceRecorder.StageHandle finalizeStage = taskInfo.traceRecorder() == null
             ? null
             : taskInfo.traceRecorder().startStage(
@@ -617,9 +623,9 @@ public class BusinessChatService {
                 conversationArchiveStore.completeExchange(
                     taskInfo.conversationId(),
                     taskInfo.exchangeId(),
-                    taskInfo.answerBuffer().toString(),
+                    answer,
                     snapshotStringList(taskInfo.thinkingSteps()),
-                    deduplicateReferences(snapshotReferenceList(taskInfo.references())),
+                    resolveReferences(taskInfo, answer, true),
                     List.of(),
                     snapshotUsedTools(taskInfo.usedTools()),
                     taskInfo.debugTrace(),
@@ -811,7 +817,7 @@ public class BusinessChatService {
         }
 
         String answer = taskInfo.answerBuffer().toString();
-        List<SearchReference> uniqueReferences = deduplicateReferences(snapshotReferenceList(taskInfo.references()));
+        List<SearchReference> uniqueReferences = resolveReferences(taskInfo, answer, true);
         ConversationTraceRecorder.StageHandle finalizeStage = taskInfo.traceRecorder() == null
             ? null
             : taskInfo.traceRecorder().startStage(
@@ -888,6 +894,7 @@ public class BusinessChatService {
                     taskInfo.traceRecorder().completeStage(finalizeStage, "会话已按完成状态收尾。", Map.of(
                         "finalStatus", ChatTurnStatus.COMPLETED.name(),
                         "referenceCount", uniqueReferences.size(),
+                        "sourceSnapshotIdentities", uniqueReferences.stream().map(SearchReference::uniqueKey).toList(),
                         "recommendationCount", recommendations.size(),
                         "answerLength", answer.length()
                     ));
@@ -916,6 +923,7 @@ public class BusinessChatService {
             return;
         }
 
+        String answer = taskInfo.answerBuffer().toString();
         String errorMessage = buildErrorMessage(error);
         ConversationTraceRecorder.StageHandle finalizeStage = taskInfo.traceRecorder() == null
             ? null
@@ -950,9 +958,9 @@ public class BusinessChatService {
                 conversationArchiveStore.completeExchange(
                     taskInfo.conversationId(),
                     taskInfo.exchangeId(),
-                    taskInfo.answerBuffer().toString(),
+                    answer,
                     snapshotStringList(taskInfo.thinkingSteps()),
-                    deduplicateReferences(snapshotReferenceList(taskInfo.references())),
+                    resolveReferences(taskInfo, answer, true),
                     List.of(),
                     snapshotUsedTools(taskInfo.usedTools()),
                     taskInfo.debugTrace(),
@@ -1068,6 +1076,33 @@ public class BusinessChatService {
             unique.putIfAbsent(reference.uniqueKey(), reference);
         }
         return new ArrayList<>(unique.values());
+    }
+
+    /**
+     * 成功、失败、停止和运行中展示共用同一绑定规则。
+     * RAG 即使还未形成 Prompt 清单也不能退回检索候选；其他执行器保留各自来源机制。
+     */
+    private List<SearchReference> resolveReferences(TaskInfo taskInfo, String answer, boolean recordBinding) {
+        var manifest = taskInfo.promptEvidenceManifest();
+        boolean rag = manifest != null || (taskInfo.executionPlan() != null
+            && taskInfo.executionPlan().getMode() == ExecutionMode.RETRIEVAL);
+        if (!rag) {
+            return deduplicateReferences(snapshotReferenceList(taskInfo.references()));
+        }
+        var binding = explicitCitationBindingService.bind(answer, manifest);
+        if (recordBinding && taskInfo.traceRecorder() != null) {
+            var stage = taskInfo.traceRecorder().startStage(
+                ai.knowhub.chat.model.trace.ConversationTraceStageCode.CITATION_BINDING,
+                ExecutionMode.RETRIEVAL.name(), "正在绑定本轮答案的显式引用。", null);
+            taskInfo.traceRecorder().completeStage(stage, "显式引用绑定完成。", Map.of(
+                "eligibleSourceIdentities", manifest == null ? List.of()
+                    : manifest.references().stream().map(SearchReference::uniqueKey).toList(),
+                "sourceSnapshotIdentities", binding.references().stream().map(SearchReference::uniqueKey).toList(),
+                "referenceIds", binding.references().stream().map(SearchReference::getReferenceId).toList(),
+                "rejectedTokens", binding.rejectedTokens()
+            ));
+        }
+        return binding.references();
     }
 
     /**
@@ -1243,12 +1278,13 @@ public class BusinessChatService {
     /** 将运行时数据合并到回合展示 */
     private ConversationExchangeVo mergeRuntimeExchange(ConversationExchangeVo exchange,
                                                           TaskInfo taskInfo) {
+        String answer = taskInfo.answerBuffer().toString();
         return new ConversationExchangeVo(
             exchange.getExchangeId(),
             exchange.getQuestion(),
-            taskInfo.answerBuffer().toString(),
+            answer,
             snapshotStringList(taskInfo.thinkingSteps()),
-            deduplicateReferences(snapshotReferenceList(taskInfo.references())),
+            resolveReferences(taskInfo, answer, false),
             exchange.getRecommendations() == null ? List.of() : exchange.getRecommendations(),
             snapshotUsedTools(taskInfo.usedTools()),
             taskInfo.debugTrace(),

@@ -1,5 +1,7 @@
 package ai.knowhub.chat.service;
 
+import ai.knowhub.chat.rag.model.PromptEvidenceManifest;
+
 import com.alibaba.cloud.ai.graph.RunnableConfig;
 import lombok.Data;
 import ai.knowhub.chat.model.debug.ChatDebugTrace;
@@ -46,6 +48,16 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 @Data
 public class TaskInfo {
+    /** 本轮 RAG Prompt 证据快照；其他执行路径不使用数值 token 引用绑定。 */
+    private volatile PromptEvidenceManifest promptEvidenceManifest;
+
+    public PromptEvidenceManifest promptEvidenceManifest() {
+        return promptEvidenceManifest;
+    }
+
+    public void promptEvidenceManifest(PromptEvidenceManifest manifest) {
+        this.promptEvidenceManifest = manifest;
+    }
 
     // ==================== 基本会话信息 ====================
 
